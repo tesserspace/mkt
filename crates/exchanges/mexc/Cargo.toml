@@ -1,0 +1,15 @@
+[package]
+name = "mkt-exchange-mexc"
+description = "MEXC adapter for mkt."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mkt-core.workspace = true
+mkt-types.workspace = true
+reqwest.workspace = true
+url.workspace = true

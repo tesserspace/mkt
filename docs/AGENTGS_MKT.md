@@ -1,0 +1,4 @@
+- 尽量使用 Decimal，非必要不使用 float
+- 使用 newtype 包装所有业务类型。 OrderId、Price、Quantity 不只是 String 或 Decimal，它们是不可互换的类型。
+- 交易所返回的错误原文必须保留。 透传给用户排查问题，不做二次解释。
+- default features 不能引入任何交易所。 用户按需激活，不默认拉全部。

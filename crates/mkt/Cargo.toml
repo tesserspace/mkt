@@ -1,0 +1,27 @@
+[package]
+name = "mkt"
+description = "A multi-exchange Rust client facade for crypto markets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = true
+
+[features]
+default = []
+all-exchanges = ["binance", "bitget", "bybit", "mexc", "okx"]
+binance = ["dep:mkt-exchange-binance"]
+bitget = ["dep:mkt-exchange-bitget"]
+bybit = ["dep:mkt-exchange-bybit"]
+mexc = ["dep:mkt-exchange-mexc"]
+okx = ["dep:mkt-exchange-okx"]
+
+[dependencies]
+mkt-core.workspace = true
+mkt-types.workspace = true
+mkt-exchange-binance = { workspace = true, optional = true }
+mkt-exchange-bitget = { workspace = true, optional = true }
+mkt-exchange-bybit = { workspace = true, optional = true }
+mkt-exchange-mexc = { workspace = true, optional = true }
+mkt-exchange-okx = { workspace = true, optional = true }

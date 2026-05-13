@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+commit_msg_file="${1:?commit message file is required}"
+
+subject="$(
+  sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d; q' "$commit_msg_file"
+)"
+
+allowed_types="build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test"
+conventional_commit_pattern="^(${allowed_types})(\\([a-z0-9][a-z0-9._/-]*\\))?!?: .+"
+
+if [[ "$subject" =~ $conventional_commit_pattern ]]; then
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+Commit message must follow Conventional Commits:
+
+  <type>[optional scope][!]: <description>
+
+Allowed types:
+  build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test
+
+Examples:
+  feat(binance): add spot order conversion
+  fix: reject invalid unix millisecond timestamps
+  refactor(core)!: rename error kind
+EOF
+
+exit 1
