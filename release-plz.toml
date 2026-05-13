@@ -1,7 +1,18 @@
 [workspace]
 changelog_update = true
-changelog_path = "./CHANGELOG.md"
 publish = true
 dependencies_update = true
 semver_check = true
 release_always = false
+
+[[package]]
+name = "mkt-types"
+changelog_path = "crates/mkt-types/CHANGELOG.md"
+
+[[package]]
+name = "mkt-core"
+changelog_path = "crates/mkt-core/CHANGELOG.md"
+
+[[package]]
+name = "mkt"
+changelog_path = "crates/mkt/CHANGELOG.md"
