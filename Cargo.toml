@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.86"
 license = "MIT OR Apache-2.0"
@@ -23,13 +23,13 @@ anyhow = "=1.0.102"
 async-trait = "=0.1.89"
 binance-sdk = { version = "=49.0.0", default-features = false, features = ["rustls-tls", "spot", "derivatives_trading_usds_futures"] }
 derive_builder = "=0.10.2"
-mkt-core = { path = "crates/mkt-core", version = "0.1.1" }
-mkt-exchange-binance = { path = "crates/exchanges/binance", version = "0.1.1" }
-mkt-exchange-bitget = { path = "crates/exchanges/bitget", version = "0.1.1" }
-mkt-exchange-bybit = { path = "crates/exchanges/bybit", version = "0.1.1" }
-mkt-exchange-mexc = { path = "crates/exchanges/mexc", version = "0.1.1" }
-mkt-exchange-okx = { path = "crates/exchanges/okx", version = "0.1.1" }
-mkt-types = { path = "crates/mkt-types", version = "0.1.1" }
+mkt-core = { path = "crates/mkt-core", version = "0.1.0" }
+mkt-exchange-binance = { path = "crates/exchanges/binance", version = "0.1.0" }
+mkt-exchange-bitget = { path = "crates/exchanges/bitget", version = "0.1.0" }
+mkt-exchange-bybit = { path = "crates/exchanges/bybit", version = "0.1.0" }
+mkt-exchange-mexc = { path = "crates/exchanges/mexc", version = "0.1.0" }
+mkt-exchange-okx = { path = "crates/exchanges/okx", version = "0.1.0" }
+mkt-types = { path = "crates/mkt-types", version = "0.1.0" }
 reqwest = { version = "=0.12.24", default-features = false, features = ["rustls-tls"] }
 rust_decimal = { version = "=1.42.0", default-features = false }
 secrecy = { version = "=0.10.3" }

@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "mkt"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "mkt-core",
  "mkt-exchange-binance",
@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-core"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "derive_builder",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-exchange-binance"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-exchange-bitget"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "mkt-core",
  "mkt-types",
@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-exchange-bybit"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "mkt-core",
  "mkt-types",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-exchange-mexc"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "mkt-core",
  "mkt-types",
@@ -1186,7 +1186,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-exchange-okx"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "mkt-core",
  "mkt-types",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "mkt-types"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "derive_builder",
  "rust_decimal",
