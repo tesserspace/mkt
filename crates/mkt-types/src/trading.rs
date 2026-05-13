@@ -101,16 +101,38 @@ pub enum MarginMode {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OrderQuantity {
+    Base(Decimal),
+    Quote(Decimal),
+}
+
+impl OrderQuantity {
+    pub fn as_base(self) -> Option<Decimal> {
+        match self {
+            Self::Base(value) => Some(value),
+            Self::Quote(_) => None,
+        }
+    }
+
+    pub fn as_quote(self) -> Option<Decimal> {
+        match self {
+            Self::Base(_) => None,
+            Self::Quote(value) => Some(value),
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(pattern = "owned", setter(into))]
+#[builder(build_fn(validate = "Self::validate"))]
 pub struct SpotOrderRequest {
     pub symbol: Symbol,
     pub side: OrderSide,
     pub order_type: OrderType,
-    #[builder(default)]
-    pub quantity: Option<Decimal>,
-    #[builder(default)]
-    pub quote_quantity: Option<Decimal>,
+    pub quantity: OrderQuantity,
     #[builder(default)]
     pub price: Option<Decimal>,
     #[builder(default)]
@@ -124,6 +146,70 @@ pub struct SpotOrderRequest {
 impl SpotOrderRequest {
     pub fn builder() -> SpotOrderRequestBuilder {
         SpotOrderRequestBuilder::default()
+    }
+
+    pub fn base_quantity(&self) -> Option<Decimal> {
+        self.quantity.as_base()
+    }
+
+    pub fn quote_quantity(&self) -> Option<Decimal> {
+        self.quantity.as_quote()
+    }
+}
+
+impl SpotOrderRequestBuilder {
+    fn validate(&self) -> Result<(), String> {
+        let Some(quantity) = self.quantity else {
+            return Err("quantity is required".to_owned());
+        };
+
+        match quantity {
+            OrderQuantity::Base(value) if value <= Decimal::ZERO => {
+                Err("quantity must be greater than zero".to_owned())
+            }
+            OrderQuantity::Quote(value) if value <= Decimal::ZERO => {
+                Err("quote quantity must be greater than zero".to_owned())
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OrderQuantity, OrderSide, OrderType, SpotOrderRequest};
+    use crate::Symbol;
+    use rust_decimal::Decimal;
+
+    #[test]
+    fn spot_order_request_builder_requires_positive_quantity_mode() {
+        let missing = SpotOrderRequest::builder()
+            .symbol(Symbol::spot("BTCUSDT"))
+            .side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .build()
+            .expect_err("missing quantity must be rejected");
+        assert!(missing.to_string().contains("quantity is required"));
+
+        let zero_base = SpotOrderRequest::builder()
+            .symbol(Symbol::spot("BTCUSDT"))
+            .side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .quantity(OrderQuantity::Base(Decimal::ZERO))
+            .build()
+            .expect_err("zero base quantity must be rejected");
+        assert!(zero_base.to_string().contains("quantity must be greater than zero"));
+
+        let zero_quote = SpotOrderRequest::builder()
+            .symbol(Symbol::spot("BTCUSDT"))
+            .side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .quantity(OrderQuantity::Quote(Decimal::ZERO))
+            .build()
+            .expect_err("zero quote quantity must be rejected");
+        assert!(zero_quote
+            .to_string()
+            .contains("quote quantity must be greater than zero"));
     }
 }
 
@@ -270,6 +356,8 @@ pub struct Fill {
     pub side: OrderSide,
     pub price: Decimal,
     pub quantity: Decimal,
+    #[builder(default)]
+    pub quote_quantity: Option<Decimal>,
     #[builder(default)]
     pub fee: Option<Decimal>,
     #[builder(default)]

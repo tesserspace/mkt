@@ -12,8 +12,8 @@ pub use exchange::{ExchangeId, ExchangeIdParseError, ExtensionExchangeId, KnownE
 pub use extensions::{ExtensionValueError, Extensions, NamespaceKey, NamespaceKeyError};
 pub use market::{
     ContractMaturity, DerivativeKind, LotSizeFilter, MarketFamily, MarketInfo, MarketKind,
-    MarketKindParseError, MarketStatus, NotionalConstraints, PriceFilter, SettlementMode, Symbol,
-    TradingConstraints,
+    MarketKindParseError, MarketQuantityMode, MarketStatus, NotionalConstraints, PriceFilter,
+    QuantityModeSupport, SettlementMode, Symbol, TradingConstraints, TradingPermissions,
 };
 pub use market_data::{
     Kline, KlineInterval, KlineRequest, LastPrice, OrderBook, OrderBookLevel, Trade, TradeSide,
@@ -21,6 +21,7 @@ pub use market_data::{
 pub use rust_decimal::Decimal;
 pub use trading::{
     ClientOrderId, Fill, FuturesCancelOrderRequest, FuturesOrderQuery, FuturesOrderRequest,
-    MarginMode, Order, OrderId, OrderKey, OrderSide, OrderStatus, OrderType, PositionSide,
-    SetLeverageRequest, SpotCancelOrderRequest, SpotOrderQuery, SpotOrderRequest, TimeInForce,
+    MarginMode, Order, OrderId, OrderKey, OrderQuantity, OrderSide, OrderStatus, OrderType,
+    PositionSide, SetLeverageRequest, SpotCancelOrderRequest, SpotOrderQuery, SpotOrderRequest,
+    TimeInForce,
 };

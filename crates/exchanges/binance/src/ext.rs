@@ -25,7 +25,6 @@ pub const TRAILING_DELTA: &str = "binance.trailing_delta";
 pub const RECV_WINDOW: &str = "binance.recv_window";
 
 // Trade-level execution metadata returned by fill queries.
-pub const QUOTE_QUANTITY: &str = "binance.quote_quantity";
 pub const IS_MAKER: &str = "binance.is_maker";
 pub const IS_BEST_MATCH: &str = "binance.is_best_match";
 pub const PREVENTED_MATCH_ID: &str = "binance.prevented_match_id";

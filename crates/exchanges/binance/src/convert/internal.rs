@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use binance_sdk::spot::rest_api::{NewOrderSideEnum, NewOrderTimeInForceEnum, NewOrderTypeEnum};
 use mkt_core::Result;
-use mkt_types::{Extensions, OrderSide, OrderStatus, OrderType, SpotOrderRequest, TimeInForce};
+use mkt_types::{
+    Extensions, OrderQuantity, OrderSide, OrderStatus, OrderType, SpotOrderRequest, TimeInForce,
+};
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
 
@@ -14,25 +16,14 @@ pub(super) fn validate_new_order_request(
     stop_price: Option<Decimal>,
     operation: &'static str,
 ) -> Result<()> {
-    let has_quantity = request.quantity.map(|value| value > Decimal::ZERO).unwrap_or(false);
-    let has_quote_quantity = request
-        .quote_quantity
-        .map(|value| value > Decimal::ZERO)
-        .unwrap_or(false);
-
-    if has_quantity == has_quote_quantity {
-        return Err(crate::error::invalid_field(
-            operation,
-            "quantity",
-            "exactly one of quantity or quote_quantity must be greater than zero",
-        ));
-    }
-
     match order_type {
-        NewOrderTypeEnum::Market if has_quote_quantity && request.side != OrderSide::Buy => {
+        NewOrderTypeEnum::Market
+            if matches!(request.quantity, OrderQuantity::Quote(_))
+                && request.side != OrderSide::Buy =>
+        {
             Err(crate::error::invalid_field(
                 operation,
-                "quote_quantity",
+                "quantity",
                 "quote_quantity is only supported for Binance spot market buys",
             ))
         }
@@ -42,11 +33,11 @@ pub(super) fn validate_new_order_request(
         | NewOrderTypeEnum::TakeProfit
         | NewOrderTypeEnum::StopLossLimit
         | NewOrderTypeEnum::TakeProfitLimit
-            if has_quote_quantity =>
+            if matches!(request.quantity, OrderQuantity::Quote(_)) =>
         {
             Err(crate::error::invalid_field(
                 operation,
-                "quote_quantity",
+                "quantity",
                 "quote_quantity is only supported for Binance spot market buys",
             ))
         }

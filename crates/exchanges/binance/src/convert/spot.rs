@@ -5,7 +5,7 @@ use binance_sdk::spot::rest_api::{
     NewOrderParams,
 };
 use mkt_core::Result;
-use mkt_types::{Balance, Fill, KlineInterval, KlineRequest, OrderKey, SpotOrderRequest};
+use mkt_types::{Balance, Fill, KlineInterval, KlineRequest, OrderKey, OrderQuantity, SpotOrderRequest};
 
 use super::internal;
 
@@ -80,11 +80,20 @@ pub(crate) fn build_new_order_params(
         order_type,
     )
     .new_order_resp_type(binance_sdk::spot::rest_api::NewOrderNewOrderRespTypeEnum::Full);
-    if let Some(quantity) = request.quantity {
-        builder = builder.quantity(quantity);
-    }
-    if let Some(quote_quantity) = request.quote_quantity {
-        builder = builder.quote_order_qty(quote_quantity);
+    match request.quantity {
+        OrderQuantity::Base(quantity) => {
+            builder = builder.quantity(quantity);
+        }
+        OrderQuantity::Quote(quote_quantity) => {
+            builder = builder.quote_order_qty(quote_quantity);
+        }
+        _ => {
+            return Err(crate::error::invalid_field(
+                operation,
+                "quantity",
+                "unsupported quantity mode for Binance spot",
+            ))
+        }
     }
     if let Some(client_order_id) = &request.client_order_id {
         builder = builder.new_client_order_id(client_order_id.0.clone());
@@ -257,16 +266,18 @@ pub(crate) fn fill_from_trade(
             .as_str(),
     )
     .map_err(|err| crate::error::invalid_field(operation, "qty", err.to_string()))?;
+    let quote_quantity = match trade.quote_qty {
+        Some(raw) => Some(
+            rust_decimal::Decimal::from_str(raw.as_str())
+                .map_err(|err| crate::error::invalid_field(operation, "quoteQty", err.to_string()))?,
+        ),
+        None => None,
+    };
     let timestamp_ms = trade
         .time
         .ok_or_else(|| crate::error::missing_field(operation, "time"))?;
     let timestamp = internal::parse_unix_millis_timestamp(timestamp_ms, operation, "time")?;
     let mut extensions = mkt_types::Extensions::new();
-    extensions
-        .insert_optional_string(crate::ext::QUOTE_QUANTITY, trade.quote_qty)
-        .map_err(|err| {
-            crate::error::invalid_field(operation, crate::ext::QUOTE_QUANTITY, err.to_string())
-        })?;
     extensions
         .insert_optional_bool(crate::ext::IS_MAKER, trade.is_maker)
         .map_err(|err| {
@@ -291,6 +302,7 @@ pub(crate) fn fill_from_trade(
         .side(side)
         .price(price)
         .quantity(quantity)
+        .quote_quantity(quote_quantity)
         .fee(match trade.commission {
             Some(raw) => Some(
                 rust_decimal::Decimal::from_str(raw.as_str()).map_err(|err| {
@@ -352,8 +364,8 @@ mod tests {
         NewOrderTimeInForceEnum, NewOrderTypeEnum,
     };
     use mkt_types::{
-        ClientOrderId, DerivativeKind, Extensions, OrderKey, OrderSide, OrderType, SettlementMode,
-        SpotOrderRequest, Symbol, TimeInForce,
+        ClientOrderId, DerivativeKind, Extensions, OrderKey, OrderQuantity, OrderSide, OrderType,
+        SettlementMode, SpotOrderRequest, Symbol, TimeInForce,
     };
     use rust_decimal::Decimal;
     use serde_json::Value;
@@ -378,7 +390,7 @@ mod tests {
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Buy)
             .order_type(OrderType::Limit)
-            .quantity(Some(decimal("1.25")))
+            .quantity(OrderQuantity::Base(decimal("1.25")))
             .price(Some(decimal("43000.50")))
             .time_in_force(Some(TimeInForce::Ioc))
             .client_order_id(Some(ClientOrderId::new("client-1")))
@@ -408,7 +420,7 @@ mod tests {
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Buy)
             .order_type(OrderType::Market)
-            .quote_quantity(Some(decimal("100")))
+            .quantity(OrderQuantity::Quote(decimal("100")))
             .build()
             .expect("quote market buy fixture should build");
 
@@ -425,10 +437,10 @@ mod tests {
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Buy)
             .order_type(OrderType::Market)
-            .quantity(Some(decimal("1")))
+            .quantity(OrderQuantity::Base(decimal("1")))
             .price(Some(decimal("43000")))
             .build()
-            .expect("market order fixture should build before adapter validation");
+            .expect("market order fixture should satisfy unified request invariants");
 
         let err = build_new_order_params(&market_with_price, OPERATION)
             .expect_err("market orders with a limit price must be rejected locally");
@@ -440,9 +452,9 @@ mod tests {
             .symbol(derivative_symbol)
             .side(OrderSide::Buy)
             .order_type(OrderType::Market)
-            .quantity(Some(decimal("1")))
+            .quantity(OrderQuantity::Base(decimal("1")))
             .build()
-            .expect("derivative-symbol fixture should build before adapter validation");
+            .expect("derivative-symbol fixture should satisfy unified request invariants");
 
         let err = build_new_order_params(&derivative_request, OPERATION)
             .expect_err("spot workflow must reject derivative symbols locally");
@@ -452,9 +464,9 @@ mod tests {
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Sell)
             .order_type(OrderType::Market)
-            .quote_quantity(Some(decimal("100")))
+            .quantity(OrderQuantity::Quote(decimal("100")))
             .build()
-            .expect("quote sell fixture should build before adapter validation");
+            .expect("quote sell fixture should satisfy unified request invariants");
 
         let err = build_new_order_params(&invalid_quote_sell, OPERATION)
             .expect_err("quote quantity should be rejected for sells");
@@ -486,13 +498,8 @@ mod tests {
         assert_eq!(fill.side, OrderSide::Sell);
         assert_eq!(fill.price, decimal("2500.25"));
         assert_eq!(fill.quantity, decimal("0.4"));
+        assert_eq!(fill.quote_quantity, Some(decimal("1000.10")));
         assert_eq!(fill.fee, Some(decimal("0.0004")));
-        assert_eq!(
-            fill.extensions
-                .string(crate::ext::QUOTE_QUANTITY)
-                .expect("quote quantity extension should be textual"),
-            Some("1000.10".to_owned())
-        );
         assert_eq!(
             fill.extensions.get(crate::ext::IS_MAKER),
             Some(&Value::Bool(true))
