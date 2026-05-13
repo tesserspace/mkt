@@ -5,7 +5,9 @@ use binance_sdk::spot::rest_api::{
     NewOrderParams,
 };
 use mkt_core::Result;
-use mkt_types::{Balance, Fill, KlineInterval, KlineRequest, OrderKey, OrderQuantity, SpotOrderRequest};
+use mkt_types::{
+    Balance, Fill, KlineInterval, KlineRequest, OrderKey, OrderQuantity, SpotOrderRequest,
+};
 
 use super::internal;
 
@@ -268,8 +270,9 @@ pub(crate) fn fill_from_trade(
     .map_err(|err| crate::error::invalid_field(operation, "qty", err.to_string()))?;
     let quote_quantity = match trade.quote_qty {
         Some(raw) => Some(
-            rust_decimal::Decimal::from_str(raw.as_str())
-                .map_err(|err| crate::error::invalid_field(operation, "quoteQty", err.to_string()))?,
+            rust_decimal::Decimal::from_str(raw.as_str()).map_err(|err| {
+                crate::error::invalid_field(operation, "quoteQty", err.to_string())
+            })?,
         ),
         None => None,
     };

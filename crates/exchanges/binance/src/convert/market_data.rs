@@ -183,18 +183,19 @@ pub(crate) fn market_info_from_exchange_symbol(
         None
     };
 
-    let mut quantity_mode_support = vec![
-        QuantityModeSupport::builder()
-            .mode(MarketQuantityMode::Base)
-            .order_types(allowed_order_types.clone())
-            .sides([mkt_types::OrderSide::Buy, mkt_types::OrderSide::Sell])
-            .build()
-            .map_err(|err| {
-                crate::error::invalid_field(operation, "quantity_mode_support", err.to_string())
-            })?,
-    ];
+    let mut quantity_mode_support = vec![QuantityModeSupport::builder()
+        .mode(MarketQuantityMode::Base)
+        .order_types(allowed_order_types.clone())
+        .sides([mkt_types::OrderSide::Buy, mkt_types::OrderSide::Sell])
+        .build()
+        .map_err(|err| {
+            crate::error::invalid_field(operation, "quantity_mode_support", err.to_string())
+        })?];
 
-    if symbol_definition.quote_order_qty_market_allowed.unwrap_or(false) {
+    if symbol_definition
+        .quote_order_qty_market_allowed
+        .unwrap_or(false)
+    {
         quantity_mode_support.push(
             QuantityModeSupport::builder()
                 .mode(MarketQuantityMode::Quote)
@@ -202,11 +203,7 @@ pub(crate) fn market_info_from_exchange_symbol(
                 .sides([mkt_types::OrderSide::Buy])
                 .build()
                 .map_err(|err| {
-                    crate::error::invalid_field(
-                        operation,
-                        "quantity_mode_support",
-                        err.to_string(),
-                    )
+                    crate::error::invalid_field(operation, "quantity_mode_support", err.to_string())
                 })?,
         );
     }

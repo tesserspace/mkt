@@ -174,7 +174,9 @@ mod tests {
             .quantity(OrderQuantity::Base(Decimal::ZERO))
             .build()
             .expect_err("zero base quantity must be rejected");
-        assert!(zero_base.to_string().contains("quantity must be greater than zero"));
+        assert!(zero_base
+            .to_string()
+            .contains("quantity must be greater than zero"));
 
         let zero_quote = SpotOrderRequest::builder()
             .symbol(Symbol::spot("BTCUSDT"))
