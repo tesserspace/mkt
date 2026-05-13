@@ -182,15 +182,18 @@ mod tests {
     use mkt_core::{
         Capability, CapabilityUnavailableReason, Error, ExchangeConfig, TransportControl,
     };
-    use mkt_types::{ExchangeId, KnownExchange};
+    use mkt_types::KnownExchange;
 
     use super::BinanceClient;
 
     #[test]
     fn capabilities_report_official_sdk_transport_control() {
-        let handle: mkt_core::ExchangeHandle = BinanceClient::new(ExchangeConfig::new(
-            ExchangeId::from(KnownExchange::Binance),
-        ))
+        let handle: mkt_core::ExchangeHandle = BinanceClient::new(
+            ExchangeConfig::builder()
+                .exchange_id(KnownExchange::Binance)
+                .build()
+                .expect("official SDK configuration should build"),
+        )
         .expect("official SDK configuration should build")
         .into();
         let capabilities = handle.info().capabilities();
@@ -203,9 +206,12 @@ mod tests {
 
     #[test]
     fn market_data_spot_trading_and_account_are_bound_into_handle() {
-        let handle: mkt_core::ExchangeHandle = BinanceClient::new(ExchangeConfig::new(
-            ExchangeId::from(KnownExchange::Binance),
-        ))
+        let handle: mkt_core::ExchangeHandle = BinanceClient::new(
+            ExchangeConfig::builder()
+                .exchange_id(KnownExchange::Binance)
+                .build()
+                .expect("official SDK configuration should build"),
+        )
         .expect("official SDK configuration should build")
         .into();
 
