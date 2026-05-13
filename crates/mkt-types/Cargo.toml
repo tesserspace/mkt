@@ -1,12 +1,15 @@
 [package]
 name = "mkt-types"
 description = "Stable business data types for the mkt exchange client ecosystem."
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = true
+categories = ["finance"]
+keywords = ["crypto", "exchange", "trading", "types"]
 
 [features]
 default = []
