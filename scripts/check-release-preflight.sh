@@ -3,7 +3,8 @@ set -euo pipefail
 
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
 
-for package in mkt-types mkt-core mkt; do
-  cargo package -p "$package" --allow-dirty --no-verify
-  cargo publish -p "$package" --dry-run --allow-dirty
-done
+cargo package -p mkt-types --allow-dirty --no-verify
+cargo publish -p mkt-types --dry-run --allow-dirty
+
+cargo package -p mkt-core --allow-dirty --no-verify
+cargo package -p mkt --allow-dirty --no-verify
