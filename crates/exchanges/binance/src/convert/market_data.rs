@@ -7,8 +7,8 @@ use binance_sdk::spot::rest_api::{
 use mkt_core::Result;
 use mkt_types::{
     ExchangeId, Kline, KlineInterval, KnownExchange, LastPrice, LotSizeFilter, MarketInfo,
-    MarketStatus, NotionalConstraints, OrderBook, OrderBookLevel, PriceFilter, Symbol, Trade,
-    TradeSide, TradingConstraints,
+    MarketQuantityMode, MarketStatus, NotionalConstraints, OrderBook, OrderBookLevel, PriceFilter,
+    QuantityModeSupport, Symbol, Trade, TradeSide, TradingConstraints, TradingPermissions,
 };
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
@@ -183,8 +183,44 @@ pub(crate) fn market_info_from_exchange_symbol(
         None
     };
 
+    let mut quantity_mode_support = vec![
+        QuantityModeSupport::builder()
+            .mode(MarketQuantityMode::Base)
+            .order_types(allowed_order_types.clone())
+            .sides([mkt_types::OrderSide::Buy, mkt_types::OrderSide::Sell])
+            .build()
+            .map_err(|err| {
+                crate::error::invalid_field(operation, "quantity_mode_support", err.to_string())
+            })?,
+    ];
+
+    if symbol_definition.quote_order_qty_market_allowed.unwrap_or(false) {
+        quantity_mode_support.push(
+            QuantityModeSupport::builder()
+                .mode(MarketQuantityMode::Quote)
+                .order_types([mkt_types::OrderType::Market])
+                .sides([mkt_types::OrderSide::Buy])
+                .build()
+                .map_err(|err| {
+                    crate::error::invalid_field(
+                        operation,
+                        "quantity_mode_support",
+                        err.to_string(),
+                    )
+                })?,
+        );
+    }
+
+    let trading_permissions = TradingPermissions::builder()
+        .spot_order_entry_allowed(symbol_definition.is_spot_trading_allowed)
+        .supported_order_types(allowed_order_types)
+        .quantity_mode_support(quantity_mode_support)
+        .build()
+        .map_err(|err| {
+            crate::error::invalid_field(operation, "trading_permissions", err.to_string())
+        })?;
+
     let trading_constraints = TradingConstraints::builder()
-        .allowed_order_types(allowed_order_types)
         .price_filter(price_filter)
         .lot_size(lot_size)
         .market_lot_size(market_lot_size)
@@ -210,6 +246,7 @@ pub(crate) fn market_info_from_exchange_symbol(
                 .quote_asset
                 .ok_or_else(|| crate::error::missing_field(operation, "quoteAsset"))?,
         )
+        .trading_permissions(trading_permissions)
         .trading_constraints(trading_constraints)
         .build()
         .map_err(|err| crate::error::invalid_field(operation, "market", err.to_string()))

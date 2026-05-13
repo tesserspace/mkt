@@ -319,11 +319,54 @@ impl NotionalConstraints {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MarketQuantityMode {
+    Base,
+    Quote,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct QuantityModeSupport {
+    pub mode: MarketQuantityMode,
+    #[builder(default)]
+    pub order_types: Vec<crate::OrderType>,
+    #[builder(default)]
+    pub sides: Vec<crate::OrderSide>,
+}
+
+impl QuantityModeSupport {
+    pub fn builder() -> QuantityModeSupportBuilder {
+        QuantityModeSupportBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder, Default)]
+#[builder(pattern = "owned", setter(into))]
+pub struct TradingPermissions {
+    #[builder(default)]
+    pub spot_order_entry_allowed: Option<bool>,
+    #[builder(default)]
+    pub supported_order_types: Vec<crate::OrderType>,
+    #[builder(default)]
+    pub quantity_mode_support: Vec<QuantityModeSupport>,
+}
+
+impl TradingPermissions {
+    pub fn builder() -> TradingPermissionsBuilder {
+        TradingPermissionsBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Builder, Default)]
 #[builder(pattern = "owned", setter(into))]
 pub struct TradingConstraints {
-    #[builder(default)]
-    pub allowed_order_types: Vec<crate::OrderType>,
     #[builder(default)]
     pub price_filter: Option<PriceFilter>,
     #[builder(default)]
@@ -350,6 +393,8 @@ pub struct MarketInfo {
     pub status: MarketStatus,
     pub base_asset: String,
     pub quote_asset: String,
+    #[builder(default)]
+    pub trading_permissions: TradingPermissions,
     #[builder(default)]
     pub trading_constraints: TradingConstraints,
 }

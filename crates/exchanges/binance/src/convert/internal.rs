@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use binance_sdk::spot::rest_api::{NewOrderSideEnum, NewOrderTimeInForceEnum, NewOrderTypeEnum};
 use mkt_core::Result;
-use mkt_types::{Extensions, OrderSide, OrderStatus, OrderType, SpotOrderRequest, TimeInForce};
+use mkt_types::{
+    Extensions, OrderQuantity, OrderSide, OrderStatus, OrderType, SpotOrderRequest, TimeInForce,
+};
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
 
@@ -14,15 +16,31 @@ pub(super) fn validate_new_order_request(
     stop_price: Option<Decimal>,
     operation: &'static str,
 ) -> Result<()> {
-    if request.quantity <= Decimal::ZERO {
-        return Err(crate::error::invalid_field(
-            operation,
-            "quantity",
-            "quantity must be greater than zero",
-        ));
-    }
-
     match order_type {
+        NewOrderTypeEnum::Market
+            if matches!(request.quantity, OrderQuantity::Quote(_))
+                && request.side != OrderSide::Buy =>
+        {
+            Err(crate::error::invalid_field(
+                operation,
+                "quantity",
+                "quote_quantity is only supported for Binance spot market buys",
+            ))
+        }
+        NewOrderTypeEnum::Limit
+        | NewOrderTypeEnum::LimitMaker
+        | NewOrderTypeEnum::StopLoss
+        | NewOrderTypeEnum::TakeProfit
+        | NewOrderTypeEnum::StopLossLimit
+        | NewOrderTypeEnum::TakeProfitLimit
+            if matches!(request.quantity, OrderQuantity::Quote(_)) =>
+        {
+            Err(crate::error::invalid_field(
+                operation,
+                "quantity",
+                "quote_quantity is only supported for Binance spot market buys",
+            ))
+        }
         NewOrderTypeEnum::Market if request.price.is_some() => Err(crate::error::invalid_field(
             operation,
             "price",
