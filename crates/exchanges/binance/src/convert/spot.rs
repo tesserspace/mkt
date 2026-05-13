@@ -415,23 +415,6 @@ mod tests {
     }
 
     #[test]
-    fn builds_market_buy_quote_order_params_from_unified_spot_request() {
-        let request = SpotOrderRequest::builder()
-            .symbol(Symbol::spot("BTCUSDT"))
-            .side(OrderSide::Buy)
-            .order_type(OrderType::Market)
-            .quantity(OrderQuantity::Quote(decimal("100")))
-            .build()
-            .expect("quote market buy fixture should build");
-
-        let params = build_new_order_params(&request, OPERATION)
-            .expect("quote market buy should convert to Binance params");
-
-        assert_eq!(params.quantity, None);
-        assert_eq!(params.quote_order_qty, Some(decimal("100")));
-    }
-
-    #[test]
     fn rejects_invalid_spot_order_requests_before_transport() {
         let market_with_price = SpotOrderRequest::builder()
             .symbol(Symbol::spot("BTCUSDT"))

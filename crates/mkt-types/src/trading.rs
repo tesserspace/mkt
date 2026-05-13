@@ -107,22 +107,6 @@ pub enum OrderQuantity {
     Quote(Decimal),
 }
 
-impl OrderQuantity {
-    pub fn as_base(self) -> Option<Decimal> {
-        match self {
-            Self::Base(value) => Some(value),
-            Self::Quote(_) => None,
-        }
-    }
-
-    pub fn as_quote(self) -> Option<Decimal> {
-        match self {
-            Self::Base(_) => None,
-            Self::Quote(value) => Some(value),
-        }
-    }
-}
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Builder)]
@@ -146,14 +130,6 @@ pub struct SpotOrderRequest {
 impl SpotOrderRequest {
     pub fn builder() -> SpotOrderRequestBuilder {
         SpotOrderRequestBuilder::default()
-    }
-
-    pub fn base_quantity(&self) -> Option<Decimal> {
-        self.quantity.as_base()
-    }
-
-    pub fn quote_quantity(&self) -> Option<Decimal> {
-        self.quantity.as_quote()
     }
 }
 
