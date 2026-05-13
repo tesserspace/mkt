@@ -11,6 +11,7 @@ pub mod prelude {
     pub use mkt_types::{
         Balance, Decimal, ExchangeId, FuturesOrderRequest, Kline, KlineInterval, KnownExchange,
         LastPrice, MarketInfo, MarketKind, Order, OrderBook, Position, SpotOrderRequest, Symbol,
+        TradingConstraints,
     };
 }
 

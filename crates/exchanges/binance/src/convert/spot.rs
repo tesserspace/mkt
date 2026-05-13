@@ -79,8 +79,13 @@ pub(crate) fn build_new_order_params(
         internal::to_sdk_side(request.side, operation)?,
         order_type,
     )
-    .quantity(request.quantity)
     .new_order_resp_type(binance_sdk::spot::rest_api::NewOrderNewOrderRespTypeEnum::Full);
+    if let Some(quantity) = request.quantity {
+        builder = builder.quantity(quantity);
+    }
+    if let Some(quote_quantity) = request.quote_quantity {
+        builder = builder.quote_order_qty(quote_quantity);
+    }
     if let Some(client_order_id) = &request.client_order_id {
         builder = builder.new_client_order_id(client_order_id.0.clone());
     }
@@ -373,7 +378,7 @@ mod tests {
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Buy)
             .order_type(OrderType::Limit)
-            .quantity(decimal("1.25"))
+            .quantity(Some(decimal("1.25")))
             .price(Some(decimal("43000.50")))
             .time_in_force(Some(TimeInForce::Ioc))
             .client_order_id(Some(ClientOrderId::new("client-1")))
@@ -398,12 +403,29 @@ mod tests {
     }
 
     #[test]
+    fn builds_market_buy_quote_order_params_from_unified_spot_request() {
+        let request = SpotOrderRequest::builder()
+            .symbol(Symbol::spot("BTCUSDT"))
+            .side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .quote_quantity(Some(decimal("100")))
+            .build()
+            .expect("quote market buy fixture should build");
+
+        let params = build_new_order_params(&request, OPERATION)
+            .expect("quote market buy should convert to Binance params");
+
+        assert_eq!(params.quantity, None);
+        assert_eq!(params.quote_order_qty, Some(decimal("100")));
+    }
+
+    #[test]
     fn rejects_invalid_spot_order_requests_before_transport() {
         let market_with_price = SpotOrderRequest::builder()
             .symbol(Symbol::spot("BTCUSDT"))
             .side(OrderSide::Buy)
             .order_type(OrderType::Market)
-            .quantity(decimal("1"))
+            .quantity(Some(decimal("1")))
             .price(Some(decimal("43000")))
             .build()
             .expect("market order fixture should build before adapter validation");
@@ -418,13 +440,25 @@ mod tests {
             .symbol(derivative_symbol)
             .side(OrderSide::Buy)
             .order_type(OrderType::Market)
-            .quantity(decimal("1"))
+            .quantity(Some(decimal("1")))
             .build()
             .expect("derivative-symbol fixture should build before adapter validation");
 
         let err = build_new_order_params(&derivative_request, OPERATION)
             .expect_err("spot workflow must reject derivative symbols locally");
         assert!(err.to_string().contains("only accepts spot symbols"));
+
+        let invalid_quote_sell = SpotOrderRequest::builder()
+            .symbol(Symbol::spot("BTCUSDT"))
+            .side(OrderSide::Sell)
+            .order_type(OrderType::Market)
+            .quote_quantity(Some(decimal("100")))
+            .build()
+            .expect("quote sell fixture should build before adapter validation");
+
+        let err = build_new_order_params(&invalid_quote_sell, OPERATION)
+            .expect_err("quote quantity should be rejected for sells");
+        assert!(err.to_string().contains("quote_quantity is only supported"));
     }
 
     #[test]

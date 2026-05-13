@@ -19,6 +19,7 @@ bitget = ["dep:mkt-exchange-bitget"]
 bybit = ["dep:mkt-exchange-bybit"]
 mexc = ["dep:mkt-exchange-mexc"]
 okx = ["dep:mkt-exchange-okx"]
+serde = ["mkt-types/serde"]
 
 [dependencies]
 mkt-core.workspace = true

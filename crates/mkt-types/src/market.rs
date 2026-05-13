@@ -325,6 +325,10 @@ pub struct TradingConstraints {
     #[builder(default)]
     pub allowed_order_types: Vec<crate::OrderType>,
     #[builder(default)]
+    pub quote_quantity_market_allowed: Option<bool>,
+    #[builder(default)]
+    pub spot_trading_allowed: Option<bool>,
+    #[builder(default)]
     pub price_filter: Option<PriceFilter>,
     #[builder(default)]
     pub lot_size: Option<LotSizeFilter>,

@@ -14,15 +14,42 @@ pub(super) fn validate_new_order_request(
     stop_price: Option<Decimal>,
     operation: &'static str,
 ) -> Result<()> {
-    if request.quantity <= Decimal::ZERO {
+    let has_quantity = request.quantity.map(|value| value > Decimal::ZERO).unwrap_or(false);
+    let has_quote_quantity = request
+        .quote_quantity
+        .map(|value| value > Decimal::ZERO)
+        .unwrap_or(false);
+
+    if has_quantity == has_quote_quantity {
         return Err(crate::error::invalid_field(
             operation,
             "quantity",
-            "quantity must be greater than zero",
+            "exactly one of quantity or quote_quantity must be greater than zero",
         ));
     }
 
     match order_type {
+        NewOrderTypeEnum::Market if has_quote_quantity && request.side != OrderSide::Buy => {
+            Err(crate::error::invalid_field(
+                operation,
+                "quote_quantity",
+                "quote_quantity is only supported for Binance spot market buys",
+            ))
+        }
+        NewOrderTypeEnum::Limit
+        | NewOrderTypeEnum::LimitMaker
+        | NewOrderTypeEnum::StopLoss
+        | NewOrderTypeEnum::TakeProfit
+        | NewOrderTypeEnum::StopLossLimit
+        | NewOrderTypeEnum::TakeProfitLimit
+            if has_quote_quantity =>
+        {
+            Err(crate::error::invalid_field(
+                operation,
+                "quote_quantity",
+                "quote_quantity is only supported for Binance spot market buys",
+            ))
+        }
         NewOrderTypeEnum::Market if request.price.is_some() => Err(crate::error::invalid_field(
             operation,
             "price",

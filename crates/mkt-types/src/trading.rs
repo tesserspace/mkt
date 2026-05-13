@@ -107,7 +107,10 @@ pub struct SpotOrderRequest {
     pub symbol: Symbol,
     pub side: OrderSide,
     pub order_type: OrderType,
-    pub quantity: Decimal,
+    #[builder(default)]
+    pub quantity: Option<Decimal>,
+    #[builder(default)]
+    pub quote_quantity: Option<Decimal>,
     #[builder(default)]
     pub price: Option<Decimal>,
     #[builder(default)]

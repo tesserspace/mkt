@@ -185,6 +185,8 @@ pub(crate) fn market_info_from_exchange_symbol(
 
     let trading_constraints = TradingConstraints::builder()
         .allowed_order_types(allowed_order_types)
+        .quote_quantity_market_allowed(symbol_definition.quote_order_qty_market_allowed)
+        .spot_trading_allowed(symbol_definition.is_spot_trading_allowed)
         .price_filter(price_filter)
         .lot_size(lot_size)
         .market_lot_size(market_lot_size)
