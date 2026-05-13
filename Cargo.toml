@@ -16,7 +16,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.86"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/pluveto/mkt"
+repository = "https://github.com/tesserspace/mkt"
 
 [workspace.dependencies]
 anyhow = "=1.0.102"

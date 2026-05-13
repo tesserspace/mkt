@@ -1,12 +1,15 @@
 [package]
 name = "mkt-exchange-okx"
 description = "OKX adapter for mkt."
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = true
+categories = ["finance"]
+keywords = ["crypto", "exchange", "trading", "okx"]
 
 [dependencies]
 mkt-core.workspace = true
