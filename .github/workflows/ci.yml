@@ -23,3 +23,19 @@ jobs:
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features
+
+  binance-testnet-smoke:
+    runs-on: ubuntu-latest
+    env:
+      BINANCE_TESTNET_API_KEY: ${{ secrets.BINANCE_TESTNET_API_KEY }}
+      BINANCE_TESTNET_SECRET_KEY: ${{ secrets.BINANCE_TESTNET_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Smoke Test
+        if: ${{ env.BINANCE_TESTNET_API_KEY != '' && env.BINANCE_TESTNET_SECRET_KEY != '' }}
+        run: cargo test -p mkt-exchange-binance --test testnet_smoke -- --nocapture
+      - name: Skip Smoke Test
+        if: ${{ env.BINANCE_TESTNET_API_KEY == '' || env.BINANCE_TESTNET_SECRET_KEY == '' }}
+        run: echo "Skipping Binance testnet smoke test because credentials are not configured."
