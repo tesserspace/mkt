@@ -1151,6 +1151,7 @@ dependencies = [
  "rust_decimal",
  "serde_json",
  "time",
+ "tokio",
 ]
 
 [[package]]

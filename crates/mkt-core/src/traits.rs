@@ -20,7 +20,7 @@ pub trait MarketData: Send + Sync {
     async fn markets(&self) -> Result<Vec<MarketInfo>>;
     async fn last_price(&self, symbol: &Symbol) -> Result<LastPrice>;
     async fn last_prices(&self, symbols: Option<&[Symbol]>) -> Result<Vec<LastPrice>>;
-    async fn order_book(&self, symbol: &Symbol, depth: Option<u32>) -> Result<OrderBook>;
+    async fn order_book(&self, symbol: &Symbol, depth: Option<u16>) -> Result<OrderBook>;
     async fn recent_trades(&self, symbol: &Symbol, limit: Option<u32>) -> Result<Vec<Trade>>;
     async fn klines(&self, request: KlineRequest) -> Result<Vec<Kline>>;
 }

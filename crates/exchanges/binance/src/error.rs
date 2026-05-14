@@ -1,5 +1,6 @@
 pub(crate) use helper::{
-    adapter_error, invalid_field, map_connector_error, map_request_error, missing_field,
+    adapter_error, decode_error, invalid_field, map_connector_error, map_request_error,
+    missing_field, websocket_error,
 };
 
 mod helper {
@@ -27,6 +28,20 @@ mod helper {
         message: impl Into<String>,
     ) -> Error {
         adapter_error(operation, format!("invalid `{field}`: {}", message.into()))
+    }
+
+    pub(crate) fn decode_error(operation: &'static str, message: impl Into<String>) -> Error {
+        Error::decode(message.into())
+            .exchange(ExchangeId::from(KnownExchange::Binance))
+            .operation(operation)
+            .into()
+    }
+
+    pub(crate) fn websocket_error(operation: &'static str, message: impl Into<String>) -> Error {
+        Error::transport(message.into())
+            .exchange(ExchangeId::from(KnownExchange::Binance))
+            .operation(operation)
+            .into()
     }
 
     pub(crate) fn map_request_error(operation: &'static str, err: AnyhowError) -> Error {

@@ -24,9 +24,11 @@ mod error;
 pub mod ext;
 mod market_data;
 mod spot;
+mod stream;
 
 use market_data::BinanceMarketData;
 use spot::{BinanceAccount, BinanceSpotTrading};
+use stream::BinancePublicStream;
 
 #[derive(Clone)]
 pub struct BinanceClient {
@@ -103,6 +105,7 @@ impl BinanceClient {
 
         mkt_core::ExchangeHandle::builder(Arc::new(BinanceInfo))
             .market_data(Arc::new(BinanceMarketData::new(inner.clone())))
+            .public_stream(Arc::new(BinancePublicStream::new(inner.clone())))
             .spot_trading(Arc::new(BinanceSpotTrading::new(inner.clone())))
             .account(Arc::new(BinanceAccount::new(inner)))
             .build()
@@ -158,12 +161,13 @@ impl ExchangeInfo for BinanceInfo {
                     .with_spot_trading()
                     .with_account(),
             )
-            .with_stream(StreamCapabilities::default())
+            .with_stream(StreamCapabilities::default().with_public())
             .with_transport(TransportControl::OfficialSdkManaged { sdk: "binance-sdk" })
             .with_capabilities([
                 Capability::MarketData,
                 Capability::SpotTrading,
                 Capability::Account,
+                Capability::PublicStream,
             ])
     }
 }
@@ -205,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn market_data_spot_trading_and_account_are_bound_into_handle() {
+    fn market_data_public_stream_spot_trading_and_account_are_bound_into_handle() {
         let handle: mkt_core::ExchangeHandle = BinanceClient::new(
             ExchangeConfig::builder()
                 .exchange_id(KnownExchange::Binance)
@@ -216,6 +220,7 @@ mod tests {
         .into();
 
         assert!(handle.market_data().is_ok());
+        assert!(handle.public_stream().is_ok());
         assert!(handle.spot_trading().is_ok());
         assert!(handle.account().is_ok());
         assert!(matches!(

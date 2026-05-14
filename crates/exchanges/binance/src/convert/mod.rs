@@ -1,13 +1,15 @@
 //! RATIONALE: This module is the Binance Spot boundary adapter. Its free
 //! functions are intentionally kept as module-level conversion entry points so
-//! `spot.rs` can translate SDK payloads and params without introducing a
-//! stateless namespace type. Private helper functions live in `internal.rs` so
-//! this boundary file only exposes crate-internal adapter entry points.
+//! REST and stream adapters can translate SDK payloads and params without
+//! introducing a stateless namespace type. Private helper functions live in
+//! `internal.rs` so this boundary file only exposes crate-internal adapter
+//! entry points.
 
 mod internal;
 mod market_data;
 mod order;
 mod spot;
+pub(crate) mod stream;
 
 pub(crate) use market_data::{
     klines_from_rows, last_prices_from_response, market_info_from_exchange_symbol,
