@@ -1,7 +1,7 @@
 use derive_builder::Builder;
 use rust_decimal::Decimal;
 use std::{fmt, str::FromStr};
-use strum_macros::{Display, EnumString};
+use strum_macros::{Display, EnumString, IntoStaticStr};
 use time::OffsetDateTime;
 
 use crate::{Extensions, Symbol};
@@ -203,6 +203,73 @@ impl OrderBook {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString, IntoStaticStr)]
+#[strum(ascii_case_insensitive)]
+pub enum BookDepthUpdateSpeed {
+    #[strum(serialize = "100ms")]
+    Ms100,
+    #[strum(serialize = "1000ms")]
+    Ms1000,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct BookTicker {
+    pub symbol: Symbol,
+    pub bid_price: Decimal,
+    pub bid_quantity: Decimal,
+    pub ask_price: Decimal,
+    pub ask_quantity: Decimal,
+    #[builder(default)]
+    pub last_update_id: Option<String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub timestamp: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl BookTicker {
+    pub fn builder() -> BookTickerBuilder {
+        BookTickerBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct OrderBookDelta {
+    pub symbol: Symbol,
+    #[builder(default)]
+    pub first_update_id: Option<String>,
+    #[builder(default)]
+    pub last_update_id: Option<String>,
+    pub bids: Vec<OrderBookLevel>,
+    pub asks: Vec<OrderBookLevel>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub timestamp: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl OrderBookDelta {
+    pub fn builder() -> OrderBookDeltaBuilder {
+        OrderBookDeltaBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(pattern = "owned", setter(into))]
 pub struct Kline {
@@ -300,9 +367,136 @@ impl Trade {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct AggTrade {
+    pub symbol: Symbol,
+    #[builder(default)]
+    pub id: Option<String>,
+    pub price: Decimal,
+    pub quantity: Decimal,
+    pub side: TradeSide,
+    #[builder(default)]
+    pub first_trade_id: Option<String>,
+    #[builder(default)]
+    pub last_trade_id: Option<String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds")
+    )]
+    pub timestamp: OffsetDateTime,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub event_time: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl AggTrade {
+    pub fn builder() -> AggTradeBuilder {
+        AggTradeBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct BlockTrade {
+    pub symbol: Symbol,
+    #[builder(default)]
+    pub id: Option<String>,
+    pub price: Decimal,
+    pub quantity: Decimal,
+    pub side: TradeSide,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds")
+    )]
+    pub timestamp: OffsetDateTime,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub event_time: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl BlockTrade {
+    pub fn builder() -> BlockTradeBuilder {
+        BlockTradeBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct AveragePrice {
+    pub symbol: Symbol,
+    #[builder(default)]
+    pub interval: Option<String>,
+    pub price: Decimal,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub event_time: Option<OffsetDateTime>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub last_trade_time: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl AveragePrice {
+    pub fn builder() -> AveragePriceBuilder {
+        AveragePriceBuilder::default()
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(pattern = "owned", setter(into))]
+pub struct MiniTicker {
+    pub symbol: Symbol,
+    pub close: Decimal,
+    pub open: Decimal,
+    pub high: Decimal,
+    pub low: Decimal,
+    pub volume_base: Decimal,
+    pub volume_quote: Decimal,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "time::serde::timestamp::milliseconds::option")
+    )]
+    #[builder(default)]
+    pub event_time: Option<OffsetDateTime>,
+    #[builder(default)]
+    pub extensions: Extensions,
+}
+
+impl MiniTicker {
+    pub fn builder() -> MiniTickerBuilder {
+        MiniTickerBuilder::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::KlineInterval;
+    use super::{BookDepthUpdateSpeed, KlineInterval};
 
     #[test]
     fn common_intervals_parse_to_duration_backed_values() {
@@ -317,5 +511,17 @@ mod tests {
 
         assert_eq!(interval, KlineInterval::Month(3));
         assert_eq!(interval.to_string(), "3M");
+    }
+
+    #[test]
+    fn book_depth_update_speed_uses_binance_style_wire_names() {
+        assert_eq!(
+            "100ms".parse::<BookDepthUpdateSpeed>(),
+            Ok(BookDepthUpdateSpeed::Ms100)
+        );
+        assert_eq!(BookDepthUpdateSpeed::Ms1000.to_string(), "1000ms");
+
+        let speed_name: &'static str = BookDepthUpdateSpeed::Ms100.into();
+        assert_eq!(speed_name, "100ms");
     }
 }

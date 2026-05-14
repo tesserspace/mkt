@@ -64,28 +64,42 @@ impl PublicStream for BinancePublicStream {
                     return;
                 }
 
-                let maybe_message = match event {
-                    WebsocketEvent::Message(raw) => Some(PublicStreamMessage::Event(
-                        convert::market_data_event_from_ws_text(
+                let messages = match event {
+                    WebsocketEvent::Message(raw) => {
+                        match convert::market_data_events_from_ws_text(
                             raw.as_str(),
                             routes.as_ref(),
                             PUBLIC_STREAM_EVENT_OPERATION,
-                        ),
-                    )),
-                    WebsocketEvent::Error(message) => Some(PublicStreamMessage::Terminal(Err(
+                        ) {
+                            Ok(events) => events
+                                .into_iter()
+                                .map(|event| PublicStreamMessage::Event(Ok(event)))
+                                .collect(),
+                            Err(err) => vec![PublicStreamMessage::Event(Err(err))],
+                        }
+                    }
+                    WebsocketEvent::Error(message) => vec![PublicStreamMessage::Terminal(Err(
                         error::websocket_error(PUBLIC_STREAM_EVENT_OPERATION, message),
-                    ))),
-                    WebsocketEvent::Close(1000, _) => Some(PublicStreamMessage::Terminal(Ok(()))),
+                    ))],
+                    WebsocketEvent::Close(1000, _) => {
+                        vec![PublicStreamMessage::Terminal(Ok(()))]
+                    }
                     WebsocketEvent::Close(code, reason) => {
-                        Some(PublicStreamMessage::Terminal(Err(error::websocket_error(
+                        vec![PublicStreamMessage::Terminal(Err(error::websocket_error(
                             PUBLIC_STREAM_EVENT_OPERATION,
                             format!("Binance public websocket closed with code {code}: {reason}"),
-                        ))))
+                        )))]
                     }
-                    WebsocketEvent::Open | WebsocketEvent::Ping | WebsocketEvent::Pong => None,
+                    WebsocketEvent::Open | WebsocketEvent::Ping | WebsocketEvent::Pong => {
+                        Vec::new()
+                    }
                 };
 
-                if let Some(message) = maybe_message {
+                for message in messages {
+                    if overflowed.load(Ordering::Acquire) || terminal_sent.load(Ordering::Acquire) {
+                        return;
+                    }
+
                     let is_terminal = matches!(message, PublicStreamMessage::Terminal(_));
 
                     match tx.try_send(message) {

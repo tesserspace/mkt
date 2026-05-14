@@ -16,7 +16,9 @@ pub use market::{
     QuantityModeSupport, SettlementMode, Symbol, TradingConstraints, TradingPermissions,
 };
 pub use market_data::{
-    Kline, KlineInterval, KlineRequest, LastPrice, OrderBook, OrderBookLevel, Trade, TradeSide,
+    AggTrade, AveragePrice, BlockTrade, BookDepthUpdateSpeed, BookTicker, Kline, KlineInterval,
+    KlineRequest, LastPrice, MiniTicker, OrderBook, OrderBookDelta, OrderBookLevel, Trade,
+    TradeSide,
 };
 pub use rust_decimal::Decimal;
 pub use trading::{

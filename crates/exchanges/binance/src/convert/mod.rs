@@ -19,4 +19,4 @@ pub(crate) use spot::{
     balance_from_account_balance, build_klines_params, build_new_order_params, fill_from_trade,
     lookup_order_key, parse_exchange_order_id, require_spot_symbol,
 };
-pub(crate) use stream::{build_public_stream_plan, market_data_event_from_ws_text};
+pub(crate) use stream::{build_public_stream_plan, market_data_events_from_ws_text};

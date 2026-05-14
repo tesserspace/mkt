@@ -14,6 +14,7 @@ pub use capabilities::{
 pub use config::{ApiCredentials, ExchangeConfig, SecretString};
 pub use error::{CapabilityUnavailableReason, Error, ErrorKind, Result};
 pub use handle::{Builder, ExchangeHandle};
+pub use mkt_types::BookDepthUpdateSpeed;
 pub use secrecy::ExposeSecret;
 pub use stream::{
     EventStream, MarketDataEvent, PrivateEvent, PrivateEventStream, PrivateSubscription,
