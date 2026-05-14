@@ -23,12 +23,12 @@ mod convert;
 mod error;
 pub mod ext;
 mod market_data;
-mod public_stream;
 mod spot;
+mod stream;
 
 use market_data::BinanceMarketData;
-use public_stream::BinancePublicStream;
 use spot::{BinanceAccount, BinanceSpotTrading};
+use stream::BinancePublicStream;
 
 #[derive(Clone)]
 pub struct BinanceClient {

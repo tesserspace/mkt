@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::super::internal;
 
-pub(super) fn stream_interval(
+pub(crate) fn stream_interval(
     interval: KlineInterval,
     operation: &'static str,
 ) -> Result<&'static str> {
@@ -33,7 +33,7 @@ pub(super) fn stream_interval(
     }
 }
 
-pub(super) fn kline_from_value(
+pub(crate) fn kline_from_value(
     value: &Value,
     interval: KlineInterval,
     operation: &'static str,

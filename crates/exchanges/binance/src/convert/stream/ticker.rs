@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::super::internal;
 
-pub(super) fn average_price_from_value(
+pub(crate) fn average_price_from_value(
     value: &Value,
     operation: &'static str,
 ) -> Result<AveragePrice> {
@@ -37,7 +37,7 @@ pub(super) fn average_price_from_value(
         .map_err(|err| crate::error::invalid_field(operation, "average_price", err.to_string()))
 }
 
-pub(super) fn mini_ticker_from_value(value: &Value, operation: &'static str) -> Result<MiniTicker> {
+pub(crate) fn mini_ticker_from_value(value: &Value, operation: &'static str) -> Result<MiniTicker> {
     let response: binance_sdk::spot::websocket_streams::MiniTickerResponse =
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid mini ticker payload: {err}"))

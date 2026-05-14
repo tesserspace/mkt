@@ -1,40 +1,21 @@
-use std::collections::BTreeSet;
-
-use mkt_core::{MarketDataEvent, Result};
-use mkt_types::{AggTrade, BlockTrade, LastPrice, Symbol, Trade, TradeSide};
+use mkt_core::Result;
+use mkt_types::{AggTrade, BlockTrade, Symbol, Trade, TradeSide};
 use rust_decimal::Decimal;
 use serde_json::Value;
 use time::OffsetDateTime;
 
-use super::{super::internal, TradeOutput};
+use super::super::internal;
 
-pub(super) fn trade_events_from_value(
-    value: &Value,
-    outputs: &BTreeSet<TradeOutput>,
-    operation: &'static str,
-) -> Result<Vec<MarketDataEvent>> {
+pub(crate) fn trade_from_value(value: &Value, operation: &'static str) -> Result<Trade> {
     let response: binance_sdk::spot::websocket_streams::TradeResponse =
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid trade payload: {err}"))
         })?;
     let trade = ParsedTrade::from_response(response, operation)?;
-    let mut events = Vec::with_capacity(outputs.len());
-
-    for output in outputs {
-        match output {
-            TradeOutput::LastPrice => {
-                events.push(MarketDataEvent::LastPrice(trade.last_price()));
-            }
-            TradeOutput::Trade => {
-                events.push(MarketDataEvent::Trade(trade.trade(operation)?));
-            }
-        }
-    }
-
-    Ok(events)
+    trade.into_trade(operation)
 }
 
-pub(super) fn agg_trade_from_value(value: &Value, operation: &'static str) -> Result<AggTrade> {
+pub(crate) fn agg_trade_from_value(value: &Value, operation: &'static str) -> Result<AggTrade> {
     let response: binance_sdk::spot::websocket_streams::AggTradeResponse =
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid aggregate trade payload: {err}"))
@@ -70,7 +51,7 @@ pub(super) fn agg_trade_from_value(value: &Value, operation: &'static str) -> Re
         .map_err(|err| crate::error::invalid_field(operation, "agg_trade", err.to_string()))
 }
 
-pub(super) fn block_trade_from_value(value: &Value, operation: &'static str) -> Result<BlockTrade> {
+pub(crate) fn block_trade_from_value(value: &Value, operation: &'static str) -> Result<BlockTrade> {
     let response: binance_sdk::spot::websocket_streams::BlockTradeResponse =
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid block trade payload: {err}"))
@@ -136,14 +117,10 @@ impl ParsedTrade {
         })
     }
 
-    fn last_price(&self) -> LastPrice {
-        LastPrice::new(self.symbol.clone(), self.price)
-    }
-
-    fn trade(&self, operation: &'static str) -> Result<Trade> {
+    fn into_trade(self, operation: &'static str) -> Result<Trade> {
         Trade::builder()
-            .symbol(self.symbol.clone())
-            .id(self.id.clone())
+            .symbol(self.symbol)
+            .id(self.id)
             .price(self.price)
             .quantity(self.quantity)
             .side(self.side)

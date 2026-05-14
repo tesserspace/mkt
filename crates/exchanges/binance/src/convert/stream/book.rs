@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::super::internal;
 
-pub(super) fn order_book_from_value(
+pub(crate) fn order_book_from_value(
     symbol: &Symbol,
     value: &Value,
     operation: &'static str,
@@ -27,7 +27,7 @@ pub(super) fn order_book_from_value(
         .map_err(|err| crate::error::invalid_field(operation, "order_book", err.to_string()))
 }
 
-pub(super) fn book_ticker_from_value(value: &Value, operation: &'static str) -> Result<BookTicker> {
+pub(crate) fn book_ticker_from_value(value: &Value, operation: &'static str) -> Result<BookTicker> {
     let response: binance_sdk::spot::websocket_streams::BookTickerResponse =
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid book ticker payload: {err}"))
@@ -60,7 +60,7 @@ pub(super) fn book_ticker_from_value(value: &Value, operation: &'static str) -> 
         .map_err(|err| crate::error::invalid_field(operation, "book_ticker", err.to_string()))
 }
 
-pub(super) fn order_book_delta_from_value(
+pub(crate) fn order_book_delta_from_value(
     value: &Value,
     operation: &'static str,
 ) -> Result<OrderBookDelta> {
