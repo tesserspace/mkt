@@ -1,8 +1,9 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use mkt_types::{
-    AggTrade, AveragePrice, Balance, BlockTrade, BookDepthUpdateSpeed, BookTicker, ExchangeId,
-    Fill, Kline, KlineRequest, LastPrice, MiniTicker, Order, OrderBook, OrderBookDelta, Position,
-    Symbol, Trade,
+    AggTrade, AveragePrice, Balance, BlockTrade, BookTicker, ExchangeId, Fill, Kline, KlineRequest,
+    LastPrice, MiniTicker, Order, OrderBook, OrderBookDelta, Position, Symbol, Trade,
 };
 
 use crate::Result;
@@ -13,11 +14,11 @@ pub enum Subscription {
     LastPrice(Symbol),
     OrderBook {
         symbol: Symbol,
-        depth: Option<u32>,
+        depth: Option<u16>,
     },
     OrderBookDeltas {
         symbol: Symbol,
-        speed: Option<BookDepthUpdateSpeed>,
+        max_update_interval: Option<Duration>,
     },
     Trades(Symbol),
     AggTrades(Symbol),
@@ -80,16 +81,12 @@ pub enum RawPayload {
 pub trait EventStream: Send {
     async fn next(&mut self) -> Result<Option<MarketDataEvent>>;
 
-    async fn close(&mut self) -> Result<()> {
-        Ok(())
-    }
+    async fn close(&mut self) -> Result<()>;
 }
 
 #[async_trait]
 pub trait PrivateEventStream: Send {
     async fn next(&mut self) -> Result<Option<PrivateEvent>>;
 
-    async fn close(&mut self) -> Result<()> {
-        Ok(())
-    }
+    async fn close(&mut self) -> Result<()>;
 }

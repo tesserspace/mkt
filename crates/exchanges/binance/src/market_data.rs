@@ -125,17 +125,11 @@ impl MarketData for BinanceMarketData {
         convert::last_prices_from_response(data, TICKER_PRICE_OPERATION)
     }
 
-    async fn order_book(&self, symbol: &Symbol, depth: Option<u32>) -> Result<OrderBook> {
+    async fn order_book(&self, symbol: &Symbol, depth: Option<u16>) -> Result<OrderBook> {
         let mut builder =
             DepthParams::builder(convert::require_spot_symbol(symbol, ORDER_BOOK_OPERATION)?);
         if let Some(depth) = depth {
-            builder = builder.limit(i32::try_from(depth).map_err(|_| {
-                error::invalid_field(
-                    ORDER_BOOK_OPERATION,
-                    "depth",
-                    "depth is out of i32 range for Binance spot",
-                )
-            })?);
+            builder = builder.limit(i32::from(depth));
         }
         let params = builder
             .build()

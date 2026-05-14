@@ -1,7 +1,7 @@
 use derive_builder::Builder;
 use rust_decimal::Decimal;
 use std::{fmt, str::FromStr};
-use strum_macros::{Display, EnumString, IntoStaticStr};
+use strum_macros::{Display, EnumString};
 use time::OffsetDateTime;
 
 use crate::{Extensions, Symbol};
@@ -199,17 +199,6 @@ impl OrderBook {
     pub fn builder() -> OrderBookBuilder {
         OrderBookBuilder::default()
     }
-}
-
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString, IntoStaticStr)]
-#[strum(ascii_case_insensitive)]
-pub enum BookDepthUpdateSpeed {
-    #[strum(serialize = "100ms")]
-    Ms100,
-    #[strum(serialize = "1000ms")]
-    Ms1000,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -496,7 +485,7 @@ impl MiniTicker {
 
 #[cfg(test)]
 mod tests {
-    use super::{BookDepthUpdateSpeed, KlineInterval};
+    use super::KlineInterval;
 
     #[test]
     fn common_intervals_parse_to_duration_backed_values() {
@@ -511,17 +500,5 @@ mod tests {
 
         assert_eq!(interval, KlineInterval::Month(3));
         assert_eq!(interval.to_string(), "3M");
-    }
-
-    #[test]
-    fn book_depth_update_speed_uses_binance_style_wire_names() {
-        assert_eq!(
-            "100ms".parse::<BookDepthUpdateSpeed>(),
-            Ok(BookDepthUpdateSpeed::Ms100)
-        );
-        assert_eq!(BookDepthUpdateSpeed::Ms1000.to_string(), "1000ms");
-
-        let speed_name: &'static str = BookDepthUpdateSpeed::Ms100.into();
-        assert_eq!(speed_name, "100ms");
     }
 }

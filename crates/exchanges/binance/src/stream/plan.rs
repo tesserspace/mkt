@@ -1,10 +1,11 @@
 use std::{
     borrow::Borrow,
     collections::{btree_map::Entry, BTreeMap},
+    time::Duration,
 };
 
 use mkt_core::{Result, Subscription};
-use mkt_types::{BookDepthUpdateSpeed, KlineInterval, Symbol};
+use mkt_types::{KlineInterval, Symbol};
 
 /// Binance combined-stream key.
 ///
@@ -40,7 +41,7 @@ impl BinanceStreamName {
 
     fn partial_book_depth(
         symbol: &Symbol,
-        depth: Option<u32>,
+        depth: Option<u16>,
         operation: &'static str,
     ) -> Result<Self> {
         Ok(Self::new(format!(
@@ -52,16 +53,22 @@ impl BinanceStreamName {
 
     fn diff_book_depth(
         symbol: &Symbol,
-        speed: Option<BookDepthUpdateSpeed>,
+        max_update_interval: Option<Duration>,
         operation: &'static str,
     ) -> Result<Self> {
         let symbol = Self::stream_symbol(symbol, operation)?;
-        Ok(Self::new(match speed {
-            Some(speed) => {
-                let speed_name: &'static str = speed.into();
-                format!("{symbol}@depth@{speed_name}")
+        Ok(Self::new(match max_update_interval {
+            Some(interval) if interval < Duration::from_millis(100) => {
+                return Err(crate::error::invalid_field(
+                    operation,
+                    "max_update_interval",
+                    "Binance spot diff depth streams do not support intervals below 100ms",
+                ));
             }
-            None => format!("{symbol}@depth"),
+            Some(interval) if interval < Duration::from_millis(1000) => {
+                format!("{symbol}@depth@100ms")
+            }
+            Some(_) | None => format!("{symbol}@depth"),
         }))
     }
 
@@ -90,7 +97,7 @@ impl BinanceStreamName {
         Ok(symbol.to_ascii_lowercase())
     }
 
-    fn partial_book_depth_levels(depth: Option<u32>, operation: &'static str) -> Result<u32> {
+    fn partial_book_depth_levels(depth: Option<u16>, operation: &'static str) -> Result<u16> {
         match depth.unwrap_or(20) {
             supported @ (5 | 10 | 20) => Ok(supported),
             other => Err(crate::error::invalid_field(
@@ -211,8 +218,11 @@ impl BinancePublicStreamPlanBuilder {
                     symbol: symbol.clone(),
                 },
             )),
-            Subscription::OrderBookDeltas { symbol, speed } => Ok((
-                BinanceStreamName::diff_book_depth(symbol, *speed, self.operation)?,
+            Subscription::OrderBookDeltas {
+                symbol,
+                max_update_interval,
+            } => Ok((
+                BinanceStreamName::diff_book_depth(symbol, *max_update_interval, self.operation)?,
                 BinancePublicStreamRoute::OrderBookDelta,
             )),
             Subscription::Trades(symbol) => Ok((
@@ -309,8 +319,10 @@ impl BinancePublicStreamPlanBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use mkt_core::Subscription;
-    use mkt_types::{BookDepthUpdateSpeed, KlineInterval, KlineRequest, SettlementMode, Symbol};
+    use mkt_types::{KlineInterval, KlineRequest, SettlementMode, Symbol};
 
     use super::*;
 
@@ -331,15 +343,15 @@ mod tests {
                 Subscription::BookTicker(Symbol::spot("XRPUSDT")),
                 Subscription::OrderBookDeltas {
                     symbol: Symbol::spot("LTCUSDT"),
-                    speed: None,
+                    max_update_interval: None,
                 },
                 Subscription::OrderBookDeltas {
                     symbol: Symbol::spot("AVAXUSDT"),
-                    speed: Some(BookDepthUpdateSpeed::Ms100),
+                    max_update_interval: Some(Duration::from_millis(100)),
                 },
                 Subscription::OrderBookDeltas {
                     symbol: Symbol::spot("LINKUSDT"),
-                    speed: Some(BookDepthUpdateSpeed::Ms1000),
+                    max_update_interval: Some(Duration::from_millis(1000)),
                 },
                 Subscription::AveragePrice(Symbol::spot("DOGEUSDT")),
                 Subscription::MiniTicker(Symbol::spot("MATICUSDT")),
@@ -366,7 +378,7 @@ mod tests {
                 "xrpusdt@bookTicker",
                 "ltcusdt@depth",
                 "avaxusdt@depth@100ms",
-                "linkusdt@depth@1000ms",
+                "linkusdt@depth",
                 "dogeusdt@avgPrice",
                 "maticusdt@miniTicker",
                 "solusdt@kline_1m",
@@ -418,6 +430,15 @@ mod tests {
             OPERATION,
         );
         assert!(bad_depth.is_err());
+
+        let unsupported_interval = BinancePublicStreamPlan::build(
+            &[Subscription::OrderBookDeltas {
+                symbol: Symbol::spot("BTCUSDT"),
+                max_update_interval: Some(Duration::from_millis(50)),
+            }],
+            OPERATION,
+        );
+        assert!(unsupported_interval.is_err());
     }
 
     #[test]

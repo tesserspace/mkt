@@ -301,12 +301,12 @@ fn raw_event(raw: &str) -> MarketDataEvent {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{str::FromStr, time::Duration};
 
     use mkt_core::{ErrorKind, EventStream, RawPayload, Subscription};
     use mkt_types::{
-        AggTrade, AveragePrice, BlockTrade, BookDepthUpdateSpeed, BookTicker, Kline, KlineInterval,
-        KlineRequest, MiniTicker, OrderBook, OrderBookDelta, Symbol, Trade, TradeSide,
+        AggTrade, AveragePrice, BlockTrade, BookTicker, Kline, KlineInterval, KlineRequest,
+        MiniTicker, OrderBook, OrderBookDelta, Symbol, Trade, TradeSide,
     };
     use rust_decimal::Decimal;
 
@@ -360,11 +360,11 @@ mod tests {
                 Subscription::BookTicker(Symbol::spot("XRPUSDT")),
                 Subscription::OrderBookDeltas {
                     symbol: Symbol::spot("ADAUSDT"),
-                    speed: None,
+                    max_update_interval: None,
                 },
                 Subscription::OrderBookDeltas {
                     symbol: Symbol::spot("AVAXUSDT"),
-                    speed: Some(BookDepthUpdateSpeed::Ms100),
+                    max_update_interval: Some(Duration::from_millis(100)),
                 },
                 Subscription::AveragePrice(Symbol::spot("LTCUSDT")),
                 Subscription::Klines(
