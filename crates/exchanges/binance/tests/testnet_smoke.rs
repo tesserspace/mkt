@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use mkt_core::{ApiCredentials, ExchangeConfig, MarketDataEvent, Subscription};
+use mkt_core::{ApiCredentials, EventStream, ExchangeConfig, MarketDataEvent, Subscription};
 use mkt_exchange_binance::BinanceClient;
-use mkt_types::{KnownExchange, Symbol};
+use mkt_types::{KnownExchange, OrderBook, Symbol};
 use tokio::time::timeout;
 
 const BINANCE_SPOT_TESTNET_REST_URL: &str = "https://testnet.binance.vision";
@@ -14,6 +14,10 @@ const BINANCE_SPOT_TESTNET_WS_STREAMS_URL: &str = "wss://stream.testnet.binance.
 const BINANCE_TESTNET_API_KEY: &str = "BINANCE_TESTNET_API_KEY";
 const BINANCE_TESTNET_SECRET_KEY: &str = "BINANCE_TESTNET_SECRET_KEY";
 const SMOKE_SYMBOL: &str = "BTCUSDT";
+const REST_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const STREAM_EVENT_TIMEOUT: Duration = Duration::from_secs(20);
+const STREAM_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::test]
 async fn binance_testnet_account_balances_smoke() {
@@ -22,12 +26,18 @@ async fn binance_testnet_account_balances_smoke() {
         return;
     };
 
-    handle
-        .account()
-        .expect("Binance handle should bind account capability")
-        .balances()
-        .await
-        .expect("Binance testnet account balances request should succeed");
+    timeout(
+        REST_REQUEST_TIMEOUT,
+        handle
+            .account()
+            .expect("Binance handle should bind account capability")
+            .balances(),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!("Binance testnet account balances request should finish within timeout")
+    })
+    .unwrap_or_else(|_| panic!("Binance testnet account balances request should succeed"));
 }
 
 #[tokio::test]
@@ -38,39 +48,61 @@ async fn binance_testnet_public_order_book_stream_smoke() {
     };
 
     let symbol = Symbol::spot(SMOKE_SYMBOL);
-    let mut stream = handle
-        .public_stream()
-        .expect("Binance handle should bind public stream capability")
-        .subscribe_public(vec![Subscription::OrderBook {
-            symbol: symbol.clone(),
-            depth: Some(5),
-        }])
-        .await
-        .expect("Binance testnet public stream subscription should succeed");
-
-    let book = timeout(Duration::from_secs(20), async {
-        loop {
-            match stream
-                .next()
-                .await
-                .expect("Binance testnet public stream event should decode")
-            {
-                Some(MarketDataEvent::OrderBook(book)) if book.symbol == symbol => break book,
-                Some(_) => {}
-                None => panic!("Binance testnet public stream closed before order book event"),
-            }
-        }
-    })
+    let mut stream = timeout(
+        STREAM_CONNECT_TIMEOUT,
+        handle
+            .public_stream()
+            .expect("Binance handle should bind public stream capability")
+            .subscribe_public(vec![Subscription::OrderBook {
+                symbol: symbol.clone(),
+                depth: Some(5),
+            }]),
+    )
     .await
-    .expect("Binance testnet public stream should emit order book event within timeout");
+    .unwrap_or_else(|_| {
+        panic!("Binance testnet public stream subscription should finish within timeout")
+    })
+    .unwrap_or_else(|_| panic!("Binance testnet public stream subscription should succeed"));
 
-    stream
-        .close()
+    let book = timeout(
+        STREAM_EVENT_TIMEOUT,
+        next_order_book(stream.as_mut(), &symbol),
+    )
+    .await;
+
+    timeout(STREAM_CLOSE_TIMEOUT, stream.close())
         .await
-        .expect("Binance testnet public stream should close cleanly");
+        .unwrap_or_else(|_| panic!("Binance testnet public stream should close within timeout"))
+        .unwrap_or_else(|_| panic!("Binance testnet public stream should close cleanly"));
+
+    let book = book
+        .unwrap_or_else(|_| {
+            panic!("Binance testnet public stream should emit order book event within timeout")
+        })
+        .unwrap_or_else(|message| panic!("{message}"));
 
     assert!(!book.bids.is_empty(), "order book should include bids");
     assert!(!book.asks.is_empty(), "order book should include asks");
+}
+
+async fn next_order_book(
+    stream: &mut dyn EventStream,
+    symbol: &Symbol,
+) -> Result<OrderBook, &'static str> {
+    loop {
+        match stream.next().await {
+            Ok(Some(MarketDataEvent::OrderBook(book))) if book.symbol == *symbol => {
+                return Ok(book);
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Err("Binance testnet public stream closed before order book event");
+            }
+            Err(_) => {
+                return Err("Binance testnet public stream event should decode");
+            }
+        }
+    }
 }
 
 fn testnet_handle() -> Option<mkt_core::ExchangeHandle> {
@@ -120,19 +152,18 @@ fn candidate_dotenv_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     if let Ok(current_dir) = env::current_dir() {
-        paths.extend(ancestor_dotenv_paths(current_dir.as_path()));
+        paths.push(current_dir.join(".env"));
     }
 
-    paths.extend(ancestor_dotenv_paths(Path::new(env!("CARGO_MANIFEST_DIR"))));
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    paths.push(manifest_dir.join(".env"));
+    if let Some(workspace_dir) = manifest_dir.ancestors().nth(3) {
+        paths.push(workspace_dir.join(".env"));
+    }
+
+    paths.sort();
     paths.dedup();
     paths
-}
-
-fn ancestor_dotenv_paths(start: &Path) -> Vec<PathBuf> {
-    start
-        .ancestors()
-        .map(|ancestor| ancestor.join(".env"))
-        .collect()
 }
 
 fn dotenv_value_from_path(path: &Path, key: &str) -> Option<String> {
