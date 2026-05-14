@@ -13,6 +13,7 @@ const BINANCE_SPOT_TESTNET_REST_URL: &str = "https://testnet.binance.vision";
 const BINANCE_SPOT_TESTNET_WS_STREAMS_URL: &str = "wss://stream.testnet.binance.vision";
 const BINANCE_TESTNET_API_KEY: &str = "BINANCE_TESTNET_API_KEY";
 const BINANCE_TESTNET_SECRET_KEY: &str = "BINANCE_TESTNET_SECRET_KEY";
+const MKT_SMOKE_TESTS_REQUIRED: &str = "MKT_SMOKE_TESTS_REQUIRED";
 const SMOKE_SYMBOL: &str = "BTCUSDT";
 const REST_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -22,11 +23,11 @@ const STREAM_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 #[tokio::test]
 async fn binance_testnet_account_balances_smoke() {
     let Some(handle) = testnet_handle() else {
-        skip_missing_credentials();
+        handle_missing_credentials();
         return;
     };
 
-    timeout(
+    let balances = timeout(
         REST_REQUEST_TIMEOUT,
         handle
             .account()
@@ -36,14 +37,20 @@ async fn binance_testnet_account_balances_smoke() {
     .await
     .unwrap_or_else(|_| {
         panic!("Binance testnet account balances request should finish within timeout")
-    })
-    .unwrap_or_else(|_| panic!("Binance testnet account balances request should succeed"));
+    });
+
+    match balances {
+        Ok(_) => {}
+        Err(err) => {
+            panic!("Binance testnet account balances request should succeed: {err}");
+        }
+    }
 }
 
 #[tokio::test]
 async fn binance_testnet_public_order_book_stream_smoke() {
     let Some(handle) = testnet_handle() else {
-        skip_missing_credentials();
+        handle_missing_credentials();
         return;
     };
 
@@ -62,7 +69,9 @@ async fn binance_testnet_public_order_book_stream_smoke() {
     .unwrap_or_else(|_| {
         panic!("Binance testnet public stream subscription should finish within timeout")
     })
-    .unwrap_or_else(|_| panic!("Binance testnet public stream subscription should succeed"));
+    .unwrap_or_else(|err| {
+        panic!("Binance testnet public stream subscription should succeed: {err}")
+    });
 
     let book = timeout(
         STREAM_EVENT_TIMEOUT,
@@ -73,7 +82,7 @@ async fn binance_testnet_public_order_book_stream_smoke() {
     timeout(STREAM_CLOSE_TIMEOUT, stream.close())
         .await
         .unwrap_or_else(|_| panic!("Binance testnet public stream should close within timeout"))
-        .unwrap_or_else(|_| panic!("Binance testnet public stream should close cleanly"));
+        .unwrap_or_else(|err| panic!("Binance testnet public stream should close cleanly: {err}"));
 
     let book = book
         .unwrap_or_else(|_| {
@@ -88,7 +97,7 @@ async fn binance_testnet_public_order_book_stream_smoke() {
 async fn next_order_book(
     stream: &mut dyn EventStream,
     symbol: &Symbol,
-) -> Result<OrderBook, &'static str> {
+) -> Result<OrderBook, String> {
     loop {
         match stream.next().await {
             Ok(Some(MarketDataEvent::OrderBook(book))) if book.symbol == *symbol => {
@@ -96,10 +105,14 @@ async fn next_order_book(
             }
             Ok(Some(_)) => {}
             Ok(None) => {
-                return Err("Binance testnet public stream closed before order book event");
+                return Err(
+                    "Binance testnet public stream closed before order book event".to_owned(),
+                );
             }
-            Err(_) => {
-                return Err("Binance testnet public stream event should decode");
+            Err(err) => {
+                return Err(format!(
+                    "Binance testnet public stream event should decode: {err}"
+                ));
             }
         }
     }
@@ -196,8 +209,19 @@ fn unquote_dotenv_value(value: &str) -> String {
         .to_owned()
 }
 
-fn skip_missing_credentials() {
+fn handle_missing_credentials() {
+    if smoke_tests_required() {
+        panic!(
+            "Binance testnet smoke test credentials are required because {MKT_SMOKE_TESTS_REQUIRED} is set; configure {BINANCE_TESTNET_API_KEY} and {BINANCE_TESTNET_SECRET_KEY}"
+        );
+    }
+
     eprintln!(
         "skipping Binance testnet smoke test: {BINANCE_TESTNET_API_KEY} and {BINANCE_TESTNET_SECRET_KEY} are not set"
     );
+}
+
+fn smoke_tests_required() -> bool {
+    env::var(MKT_SMOKE_TESTS_REQUIRED)
+        .is_ok_and(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }
