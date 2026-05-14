@@ -27,28 +27,15 @@ jobs:
         run: cargo test --workspace --all-features
 
   binance-testnet-smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, qcloud2]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check Smoke Test Credentials
-        id: binance_testnet_credentials
-        env:
-          BINANCE_TESTNET_API_KEY: ${{ secrets.BINANCE_TESTNET_API_KEY }}
-          BINANCE_TESTNET_SECRET_KEY: ${{ secrets.BINANCE_TESTNET_SECRET_KEY }}
-        run: |
-          if [ -n "$BINANCE_TESTNET_API_KEY" ] && [ -n "$BINANCE_TESTNET_SECRET_KEY" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Smoke Test
-        if: ${{ steps.binance_testnet_credentials.outputs.configured == 'true' }}
         env:
+          MKT_SMOKE_TESTS_REQUIRED: "1"
           BINANCE_TESTNET_API_KEY: ${{ secrets.BINANCE_TESTNET_API_KEY }}
           BINANCE_TESTNET_SECRET_KEY: ${{ secrets.BINANCE_TESTNET_SECRET_KEY }}
         run: cargo test -p mkt-exchange-binance --test testnet_smoke
-      - name: Skip Smoke Test
-        if: ${{ steps.binance_testnet_credentials.outputs.configured != 'true' }}
-        run: echo "Skipping Binance testnet smoke test because credentials are not configured."
