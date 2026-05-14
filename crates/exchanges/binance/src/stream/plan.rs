@@ -14,6 +14,95 @@ use mkt_types::{BookDepthUpdateSpeed, KlineInterval, Symbol};
 pub(super) struct BinanceStreamName(String);
 
 impl BinanceStreamName {
+    fn trade(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "trade", operation)
+    }
+
+    fn agg_trade(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "aggTrade", operation)
+    }
+
+    fn block_trade(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "blockTrade", operation)
+    }
+
+    fn book_ticker(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "bookTicker", operation)
+    }
+
+    fn average_price(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "avgPrice", operation)
+    }
+
+    fn mini_ticker(symbol: &Symbol, operation: &'static str) -> Result<Self> {
+        Self::symbol_stream(symbol, "miniTicker", operation)
+    }
+
+    fn partial_book_depth(
+        symbol: &Symbol,
+        depth: Option<u32>,
+        operation: &'static str,
+    ) -> Result<Self> {
+        Ok(Self::new(format!(
+            "{}@depth{}",
+            Self::stream_symbol(symbol, operation)?,
+            Self::partial_book_depth_levels(depth, operation)?
+        )))
+    }
+
+    fn diff_book_depth(
+        symbol: &Symbol,
+        speed: Option<BookDepthUpdateSpeed>,
+        operation: &'static str,
+    ) -> Result<Self> {
+        let symbol = Self::stream_symbol(symbol, operation)?;
+        Ok(Self::new(match speed {
+            Some(speed) => {
+                let speed_name: &'static str = speed.into();
+                format!("{symbol}@depth@{speed_name}")
+            }
+            None => format!("{symbol}@depth"),
+        }))
+    }
+
+    fn kline(symbol: &Symbol, interval: KlineInterval, operation: &'static str) -> Result<Self> {
+        Ok(Self::new(format!(
+            "{}@kline_{}",
+            Self::stream_symbol(symbol, operation)?,
+            crate::convert::stream::stream_interval(interval, operation)?
+        )))
+    }
+
+    fn symbol_stream(
+        symbol: &Symbol,
+        stream: &'static str,
+        operation: &'static str,
+    ) -> Result<Self> {
+        Ok(Self::new(format!(
+            "{}@{}",
+            Self::stream_symbol(symbol, operation)?,
+            stream
+        )))
+    }
+
+    fn stream_symbol(symbol: &Symbol, operation: &'static str) -> Result<String> {
+        let symbol = crate::convert::require_spot_symbol(symbol, operation)?;
+        Ok(symbol.to_ascii_lowercase())
+    }
+
+    fn partial_book_depth_levels(depth: Option<u32>, operation: &'static str) -> Result<u32> {
+        match depth.unwrap_or(20) {
+            supported @ (5 | 10 | 20) => Ok(supported),
+            other => Err(crate::error::invalid_field(
+                operation,
+                "depth",
+                format!(
+                    "Binance spot partial book streams support 5, 10, or 20 levels, got {other}"
+                ),
+            )),
+        }
+    }
+
     fn new(value: String) -> Self {
         Self(value)
     }
@@ -39,7 +128,7 @@ impl From<BinanceStreamName> for String {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum BinancePublicStreamRoute {
-    Trade { projection: TradeProjection },
+    Trade { projections: Vec<TradeProjection> },
     AggTrade,
     BlockTrade,
     BookTicker,
@@ -58,32 +147,6 @@ pub(super) enum BinancePublicStreamRoute {
 pub(super) enum TradeProjection {
     LastPrice,
     Trade,
-    LastPriceAndTrade,
-}
-
-impl TradeProjection {
-    pub(super) fn emits_last_price(self) -> bool {
-        matches!(self, Self::LastPrice | Self::LastPriceAndTrade)
-    }
-
-    pub(super) fn emits_trade(self) -> bool {
-        matches!(self, Self::Trade | Self::LastPriceAndTrade)
-    }
-
-    fn merge(self, other: Self) -> Self {
-        if self == other {
-            return self;
-        }
-
-        match (self, other) {
-            (Self::LastPriceAndTrade, _) | (_, Self::LastPriceAndTrade) => Self::LastPriceAndTrade,
-            (Self::LastPrice, Self::Trade) | (Self::Trade, Self::LastPrice) => {
-                Self::LastPriceAndTrade
-            }
-            (Self::LastPrice, Self::LastPrice) => Self::LastPrice,
-            (Self::Trade, Self::Trade) => Self::Trade,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,53 +202,45 @@ impl BinancePublicStreamPlanBuilder {
     ) -> Result<(BinanceStreamName, BinancePublicStreamRoute)> {
         match subscription {
             Subscription::LastPrice(symbol) => Ok((
-                self.named(format!("{}@trade", self.stream_symbol(symbol)?)),
+                BinanceStreamName::trade(symbol, self.operation)?,
                 self.trade_route(TradeProjection::LastPrice),
             )),
             Subscription::OrderBook { symbol, depth } => Ok((
-                self.named(format!(
-                    "{}@depth{}",
-                    self.stream_symbol(symbol)?,
-                    self.partial_book_depth(*depth)?
-                )),
+                BinanceStreamName::partial_book_depth(symbol, *depth, self.operation)?,
                 BinancePublicStreamRoute::OrderBook {
                     symbol: symbol.clone(),
                 },
             )),
             Subscription::OrderBookDeltas { symbol, speed } => Ok((
-                self.diff_depth_stream_name(symbol, *speed)?,
+                BinanceStreamName::diff_book_depth(symbol, *speed, self.operation)?,
                 BinancePublicStreamRoute::OrderBookDelta,
             )),
             Subscription::Trades(symbol) => Ok((
-                self.named(format!("{}@trade", self.stream_symbol(symbol)?)),
+                BinanceStreamName::trade(symbol, self.operation)?,
                 self.trade_route(TradeProjection::Trade),
             )),
             Subscription::AggTrades(symbol) => Ok((
-                self.named(format!("{}@aggTrade", self.stream_symbol(symbol)?)),
+                BinanceStreamName::agg_trade(symbol, self.operation)?,
                 BinancePublicStreamRoute::AggTrade,
             )),
             Subscription::BlockTrades(symbol) => Ok((
-                self.named(format!("{}@blockTrade", self.stream_symbol(symbol)?)),
+                BinanceStreamName::block_trade(symbol, self.operation)?,
                 BinancePublicStreamRoute::BlockTrade,
             )),
             Subscription::BookTicker(symbol) => Ok((
-                self.named(format!("{}@bookTicker", self.stream_symbol(symbol)?)),
+                BinanceStreamName::book_ticker(symbol, self.operation)?,
                 BinancePublicStreamRoute::BookTicker,
             )),
             Subscription::AveragePrice(symbol) => Ok((
-                self.named(format!("{}@avgPrice", self.stream_symbol(symbol)?)),
+                BinanceStreamName::average_price(symbol, self.operation)?,
                 BinancePublicStreamRoute::AveragePrice,
             )),
             Subscription::MiniTicker(symbol) => Ok((
-                self.named(format!("{}@miniTicker", self.stream_symbol(symbol)?)),
+                BinanceStreamName::mini_ticker(symbol, self.operation)?,
                 BinancePublicStreamRoute::MiniTicker,
             )),
             Subscription::Klines(request) => Ok((
-                self.named(format!(
-                    "{}@kline_{}",
-                    self.stream_symbol(&request.symbol)?,
-                    crate::convert::stream::stream_interval(request.interval, self.operation)?
-                )),
+                BinanceStreamName::kline(&request.symbol, request.interval, self.operation)?,
                 BinancePublicStreamRoute::Kline {
                     interval: request.interval,
                 },
@@ -225,12 +280,16 @@ impl BinancePublicStreamPlanBuilder {
 
         match (existing, route) {
             (
-                BinancePublicStreamRoute::Trade { projection },
+                BinancePublicStreamRoute::Trade { projections },
                 BinancePublicStreamRoute::Trade {
-                    projection: new_projection,
+                    projections: new_projections,
                 },
             ) => {
-                *projection = (*projection).merge(new_projection);
+                for projection in new_projections {
+                    if !projections.contains(&projection) {
+                        projections.push(projection);
+                    }
+                }
                 Ok(())
             }
             _ => Err(crate::error::invalid_field(
@@ -242,44 +301,9 @@ impl BinancePublicStreamPlanBuilder {
     }
 
     fn trade_route(&self, projection: TradeProjection) -> BinancePublicStreamRoute {
-        BinancePublicStreamRoute::Trade { projection }
-    }
-
-    fn stream_symbol(&self, symbol: &Symbol) -> Result<String> {
-        let symbol = crate::convert::require_spot_symbol(symbol, self.operation)?;
-        Ok(symbol.to_ascii_lowercase())
-    }
-
-    fn diff_depth_stream_name(
-        &self,
-        symbol: &Symbol,
-        speed: Option<BookDepthUpdateSpeed>,
-    ) -> Result<BinanceStreamName> {
-        let symbol = self.stream_symbol(symbol)?;
-        Ok(self.named(match speed {
-            Some(speed) => {
-                let speed_name: &'static str = speed.into();
-                format!("{symbol}@depth@{speed_name}")
-            }
-            None => format!("{symbol}@depth"),
-        }))
-    }
-
-    fn partial_book_depth(&self, depth: Option<u32>) -> Result<u32> {
-        match depth.unwrap_or(20) {
-            supported @ (5 | 10 | 20) => Ok(supported),
-            other => Err(crate::error::invalid_field(
-                self.operation,
-                "depth",
-                format!(
-                    "Binance spot partial book streams support 5, 10, or 20 levels, got {other}"
-                ),
-            )),
+        BinancePublicStreamRoute::Trade {
+            projections: vec![projection],
         }
-    }
-
-    fn named(&self, value: String) -> BinanceStreamName {
-        BinanceStreamName::new(value)
     }
 }
 
@@ -370,9 +394,8 @@ mod tests {
         assert_eq!(stream_names(&plan), vec!["btcusdt@trade"]);
         assert!(matches!(
             plan.routes.get("btcusdt@trade"),
-            Some(BinancePublicStreamRoute::Trade {
-                projection: TradeProjection::LastPriceAndTrade,
-            })
+            Some(BinancePublicStreamRoute::Trade { projections })
+                if projections == &vec![TradeProjection::LastPrice, TradeProjection::Trade]
         ));
     }
 

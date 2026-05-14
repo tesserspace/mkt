@@ -232,8 +232,8 @@ fn market_data_events_from_ws_text(
     };
 
     match route {
-        BinancePublicStreamRoute::Trade { projection } => {
-            trade_events_from_payload(payload, *projection, operation)
+        BinancePublicStreamRoute::Trade { projections } => {
+            trade_events_from_payload(payload, projections, operation)
         }
         BinancePublicStreamRoute::AggTrade => Ok(vec![MarketDataEvent::AggTrade(
             convert::stream::agg_trade_from_value(payload, operation)?,
@@ -264,21 +264,29 @@ fn market_data_events_from_ws_text(
 
 fn trade_events_from_payload(
     payload: &Value,
-    projection: TradeProjection,
+    projections: &[TradeProjection],
     operation: &'static str,
 ) -> Result<Vec<MarketDataEvent>> {
     let trade = convert::stream::trade_from_value(payload, operation)?;
-    let mut events = Vec::with_capacity(2);
+    let mut last_price = projections
+        .contains(&TradeProjection::LastPrice)
+        .then(|| LastPrice::new(trade.symbol.clone(), trade.price));
+    let mut trade = Some(trade);
+    let mut events = Vec::with_capacity(projections.len());
 
-    if projection.emits_last_price() {
-        events.push(MarketDataEvent::LastPrice(LastPrice::new(
-            trade.symbol.clone(),
-            trade.price,
-        )));
-    }
-
-    if projection.emits_trade() {
-        events.push(MarketDataEvent::Trade(trade));
+    for projection in projections {
+        match projection {
+            TradeProjection::LastPrice => {
+                if let Some(last_price) = last_price.take() {
+                    events.push(MarketDataEvent::LastPrice(last_price));
+                }
+            }
+            TradeProjection::Trade => {
+                if let Some(trade) = trade.take() {
+                    events.push(MarketDataEvent::Trade(trade));
+                }
+            }
+        }
     }
 
     Ok(events)
