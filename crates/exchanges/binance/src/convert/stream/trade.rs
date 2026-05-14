@@ -11,7 +11,7 @@ pub(crate) fn trade_from_value(value: &Value, operation: &'static str) -> Result
         serde_json::from_value(value.clone()).map_err(|err| {
             crate::error::decode_error(operation, format!("invalid trade payload: {err}"))
         })?;
-    let trade = ParsedTrade::from_response(response, operation)?;
+    let trade = BinanceParsedTrade::from_response(response, operation)?;
     trade.into_trade(operation)
 }
 
@@ -85,7 +85,7 @@ pub(crate) fn block_trade_from_value(value: &Value, operation: &'static str) -> 
         .map_err(|err| crate::error::invalid_field(operation, "block_trade", err.to_string()))
 }
 
-struct ParsedTrade {
+struct BinanceParsedTrade {
     symbol: Symbol,
     id: Option<String>,
     price: Decimal,
@@ -94,7 +94,7 @@ struct ParsedTrade {
     timestamp: OffsetDateTime,
 }
 
-impl ParsedTrade {
+impl BinanceParsedTrade {
     fn from_response(
         response: binance_sdk::spot::websocket_streams::TradeResponse,
         operation: &'static str,

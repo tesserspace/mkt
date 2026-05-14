@@ -19,7 +19,9 @@ use tokio::{
     task::JoinHandle,
 };
 
-use super::plan::{build_public_stream_plan, BinancePublicStreamRoute, TradeOutput};
+use super::plan::{
+    BinancePublicStreamPlan, BinancePublicStreamRoute, BinanceStreamName, TradeProjection,
+};
 use crate::{convert, error, BinanceInner};
 
 const SUBSCRIBE_PUBLIC_OPERATION: &str = "spot.public_stream.subscribe";
@@ -42,17 +44,20 @@ impl PublicStream for BinancePublicStream {
         &self,
         subscriptions: Vec<Subscription>,
     ) -> Result<Box<dyn EventStream>> {
-        let plan = build_public_stream_plan(subscriptions.as_slice(), SUBSCRIBE_PUBLIC_OPERATION)?;
+        let BinancePublicStreamPlan {
+            stream_names,
+            routes,
+        } = BinancePublicStreamPlan::build(subscriptions.as_slice(), SUBSCRIBE_PUBLIC_OPERATION)?;
         let websocket_streams = self
             .inner
             .spot_ws_streams
             .connect_with_config(WebsocketStreamsConnectConfig {
-                streams: plan.stream_names,
+                streams: stream_names.into_iter().map(String::from).collect(),
                 mode: None,
             })
             .await
             .map_err(|err| error::map_request_error(SUBSCRIBE_PUBLIC_OPERATION, err))?;
-        let routes = Arc::new(plan.routes);
+        let routes = Arc::new(routes);
         let (tx, rx) = mpsc::channel(EVENT_BUFFER_CAPACITY);
         let overflowed = Arc::new(AtomicBool::new(false));
         let terminal_sent = Arc::new(AtomicBool::new(false));
@@ -210,7 +215,7 @@ impl Drop for BinancePublicEventStream {
 
 fn market_data_events_from_ws_text(
     raw: &str,
-    routes: &BTreeMap<String, BinancePublicStreamRoute>,
+    routes: &BTreeMap<BinanceStreamName, BinancePublicStreamRoute>,
     operation: &'static str,
 ) -> Result<Vec<MarketDataEvent>> {
     let value: Value = serde_json::from_str(raw).map_err(|err| {
@@ -227,8 +232,8 @@ fn market_data_events_from_ws_text(
     };
 
     match route {
-        BinancePublicStreamRoute::Trade { outputs } => {
-            trade_events_from_payload(payload, outputs, operation)
+        BinancePublicStreamRoute::Trade { projection } => {
+            trade_events_from_payload(payload, *projection, operation)
         }
         BinancePublicStreamRoute::AggTrade => Ok(vec![MarketDataEvent::AggTrade(
             convert::stream::agg_trade_from_value(payload, operation)?,
@@ -259,20 +264,20 @@ fn market_data_events_from_ws_text(
 
 fn trade_events_from_payload(
     payload: &Value,
-    outputs: &std::collections::BTreeSet<TradeOutput>,
+    projection: TradeProjection,
     operation: &'static str,
 ) -> Result<Vec<MarketDataEvent>> {
     let trade = convert::stream::trade_from_value(payload, operation)?;
-    let mut events = Vec::with_capacity(outputs.len());
+    let mut events = Vec::with_capacity(2);
 
-    if outputs.contains(&TradeOutput::LastPrice) {
+    if projection.emits_last_price() {
         events.push(MarketDataEvent::LastPrice(LastPrice::new(
             trade.symbol.clone(),
             trade.price,
         )));
     }
 
-    if outputs.contains(&TradeOutput::Trade) {
+    if projection.emits_trade() {
         events.push(MarketDataEvent::Trade(trade));
     }
 
@@ -302,8 +307,8 @@ mod tests {
     const OPERATION: &str = "test.websocket";
 
     #[test]
-    fn trade_payload_emits_all_requested_trade_outputs() {
-        let plan = build_public_stream_plan(
+    fn trade_payload_emits_all_requested_trade_projections() {
+        let plan = BinancePublicStreamPlan::build(
             &[
                 Subscription::LastPrice(Symbol::spot("BTCUSDT")),
                 Subscription::Trades(Symbol::spot("BTCUSDT")),
@@ -335,7 +340,7 @@ mod tests {
 
     #[test]
     fn websocket_payloads_map_to_domain_events() {
-        let plan = build_public_stream_plan(
+        let plan = BinancePublicStreamPlan::build(
             &[
                 Subscription::MiniTicker(Symbol::spot("BTCUSDT")),
                 Subscription::OrderBook {
@@ -592,7 +597,7 @@ mod tests {
 
     fn one_event(
         raw: &str,
-        routes: &BTreeMap<String, BinancePublicStreamRoute>,
+        routes: &BTreeMap<BinanceStreamName, BinancePublicStreamRoute>,
     ) -> MarketDataEvent {
         let mut events = market_data_events_from_ws_text(raw, routes, OPERATION)
             .expect("websocket payload should map");

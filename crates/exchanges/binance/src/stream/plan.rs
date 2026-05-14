@@ -1,11 +1,45 @@
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::{
+    borrow::Borrow,
+    collections::{btree_map::Entry, BTreeMap},
+};
 
 use mkt_core::{Result, Subscription};
 use mkt_types::{BookDepthUpdateSpeed, KlineInterval, Symbol};
 
+/// Binance combined-stream key.
+///
+/// The SDK surfaces raw websocket envelopes where `stream` is only a bare
+/// stream name string, so the adapter keeps this typed key for manual routing.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct BinanceStreamName(String);
+
+impl BinanceStreamName {
+    fn new(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl AsRef<str> for BinanceStreamName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for BinanceStreamName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<BinanceStreamName> for String {
+    fn from(value: BinanceStreamName) -> Self {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum BinancePublicStreamRoute {
-    Trade { outputs: BTreeSet<TradeOutput> },
+    Trade { projection: TradeProjection },
     AggTrade,
     BlockTrade,
     BookTicker,
@@ -16,189 +50,236 @@ pub(super) enum BinancePublicStreamRoute {
     Kline { interval: KlineInterval },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum TradeOutput {
+/// Internal projection from one Binance `@trade` payload into mkt events.
+///
+/// `LastPrice` and full trade subscriptions share the same upstream Binance
+/// stream, so a route can project the payload into one or both event shapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TradeProjection {
     LastPrice,
     Trade,
+    LastPriceAndTrade,
+}
+
+impl TradeProjection {
+    pub(super) fn emits_last_price(self) -> bool {
+        matches!(self, Self::LastPrice | Self::LastPriceAndTrade)
+    }
+
+    pub(super) fn emits_trade(self) -> bool {
+        matches!(self, Self::Trade | Self::LastPriceAndTrade)
+    }
+
+    fn merge(self, other: Self) -> Self {
+        if self == other {
+            return self;
+        }
+
+        match (self, other) {
+            (Self::LastPriceAndTrade, _) | (_, Self::LastPriceAndTrade) => Self::LastPriceAndTrade,
+            (Self::LastPrice, Self::Trade) | (Self::Trade, Self::LastPrice) => {
+                Self::LastPriceAndTrade
+            }
+            (Self::LastPrice, Self::LastPrice) => Self::LastPrice,
+            (Self::Trade, Self::Trade) => Self::Trade,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct BinancePublicStreamPlan {
-    pub(super) stream_names: Vec<String>,
-    pub(super) routes: BTreeMap<String, BinancePublicStreamRoute>,
+    pub(super) stream_names: Vec<BinanceStreamName>,
+    pub(super) routes: BTreeMap<BinanceStreamName, BinancePublicStreamRoute>,
 }
 
-pub(super) fn build_public_stream_plan(
-    subscriptions: &[Subscription],
+impl BinancePublicStreamPlan {
+    pub(super) fn build(subscriptions: &[Subscription], operation: &'static str) -> Result<Self> {
+        BinancePublicStreamPlanBuilder::new(operation).build(subscriptions)
+    }
+}
+
+struct BinancePublicStreamPlanBuilder {
     operation: &'static str,
-) -> Result<BinancePublicStreamPlan> {
-    if subscriptions.is_empty() {
-        return Err(crate::error::invalid_field(
+    stream_names: Vec<BinanceStreamName>,
+    routes: BTreeMap<BinanceStreamName, BinancePublicStreamRoute>,
+}
+
+impl BinancePublicStreamPlanBuilder {
+    fn new(operation: &'static str) -> Self {
+        Self {
             operation,
-            "subscriptions",
-            "at least one public subscription is required",
-        ));
+            stream_names: Vec::new(),
+            routes: BTreeMap::new(),
+        }
     }
 
-    let mut stream_names = Vec::new();
-    let mut routes = BTreeMap::new();
+    fn build(mut self, subscriptions: &[Subscription]) -> Result<BinancePublicStreamPlan> {
+        if subscriptions.is_empty() {
+            return Err(crate::error::invalid_field(
+                self.operation,
+                "subscriptions",
+                "at least one public subscription is required",
+            ));
+        }
 
-    for subscription in subscriptions {
-        let (stream_name, route) = match subscription {
-            Subscription::LastPrice(symbol) => (
-                format!("{}@trade", stream_symbol(symbol, operation)?),
-                trade_route(TradeOutput::LastPrice),
-            ),
-            Subscription::OrderBook { symbol, depth } => (
-                format!(
+        for subscription in subscriptions {
+            let (stream_name, route) = self.route_for_subscription(subscription)?;
+            self.insert_route(stream_name, route)?;
+        }
+
+        Ok(BinancePublicStreamPlan {
+            stream_names: self.stream_names,
+            routes: self.routes,
+        })
+    }
+
+    fn route_for_subscription(
+        &self,
+        subscription: &Subscription,
+    ) -> Result<(BinanceStreamName, BinancePublicStreamRoute)> {
+        match subscription {
+            Subscription::LastPrice(symbol) => Ok((
+                self.named(format!("{}@trade", self.stream_symbol(symbol)?)),
+                self.trade_route(TradeProjection::LastPrice),
+            )),
+            Subscription::OrderBook { symbol, depth } => Ok((
+                self.named(format!(
                     "{}@depth{}",
-                    stream_symbol(symbol, operation)?,
-                    partial_book_depth(*depth, operation)?
-                ),
+                    self.stream_symbol(symbol)?,
+                    self.partial_book_depth(*depth)?
+                )),
                 BinancePublicStreamRoute::OrderBook {
                     symbol: symbol.clone(),
                 },
-            ),
-            Subscription::OrderBookDeltas { symbol, speed } => (
-                diff_depth_stream_name(symbol, *speed, operation)?,
+            )),
+            Subscription::OrderBookDeltas { symbol, speed } => Ok((
+                self.diff_depth_stream_name(symbol, *speed)?,
                 BinancePublicStreamRoute::OrderBookDelta,
-            ),
-            Subscription::Trades(symbol) => (
-                format!("{}@trade", stream_symbol(symbol, operation)?),
-                trade_route(TradeOutput::Trade),
-            ),
-            Subscription::AggTrades(symbol) => (
-                format!("{}@aggTrade", stream_symbol(symbol, operation)?),
+            )),
+            Subscription::Trades(symbol) => Ok((
+                self.named(format!("{}@trade", self.stream_symbol(symbol)?)),
+                self.trade_route(TradeProjection::Trade),
+            )),
+            Subscription::AggTrades(symbol) => Ok((
+                self.named(format!("{}@aggTrade", self.stream_symbol(symbol)?)),
                 BinancePublicStreamRoute::AggTrade,
-            ),
-            Subscription::BlockTrades(symbol) => (
-                format!("{}@blockTrade", stream_symbol(symbol, operation)?),
+            )),
+            Subscription::BlockTrades(symbol) => Ok((
+                self.named(format!("{}@blockTrade", self.stream_symbol(symbol)?)),
                 BinancePublicStreamRoute::BlockTrade,
-            ),
-            Subscription::BookTicker(symbol) => (
-                format!("{}@bookTicker", stream_symbol(symbol, operation)?),
+            )),
+            Subscription::BookTicker(symbol) => Ok((
+                self.named(format!("{}@bookTicker", self.stream_symbol(symbol)?)),
                 BinancePublicStreamRoute::BookTicker,
-            ),
-            Subscription::AveragePrice(symbol) => (
-                format!("{}@avgPrice", stream_symbol(symbol, operation)?),
+            )),
+            Subscription::AveragePrice(symbol) => Ok((
+                self.named(format!("{}@avgPrice", self.stream_symbol(symbol)?)),
                 BinancePublicStreamRoute::AveragePrice,
-            ),
-            Subscription::MiniTicker(symbol) => (
-                format!("{}@miniTicker", stream_symbol(symbol, operation)?),
+            )),
+            Subscription::MiniTicker(symbol) => Ok((
+                self.named(format!("{}@miniTicker", self.stream_symbol(symbol)?)),
                 BinancePublicStreamRoute::MiniTicker,
-            ),
-            Subscription::Klines(request) => (
-                format!(
+            )),
+            Subscription::Klines(request) => Ok((
+                self.named(format!(
                     "{}@kline_{}",
-                    stream_symbol(&request.symbol, operation)?,
-                    crate::convert::stream::stream_interval(request.interval, operation)?
-                ),
+                    self.stream_symbol(&request.symbol)?,
+                    crate::convert::stream::stream_interval(request.interval, self.operation)?
+                )),
                 BinancePublicStreamRoute::Kline {
                     interval: request.interval,
                 },
-            ),
-            _ => {
-                return Err(crate::error::invalid_field(
-                    operation,
-                    "subscriptions",
-                    "unsupported Binance public stream subscription",
-                ));
+            )),
+            _ => Err(crate::error::invalid_field(
+                self.operation,
+                "subscriptions",
+                "unsupported Binance public stream subscription",
+            )),
+        }
+    }
+
+    fn insert_route(
+        &mut self,
+        stream_name: BinanceStreamName,
+        route: BinancePublicStreamRoute,
+    ) -> Result<()> {
+        let operation = self.operation;
+        match self.routes.entry(stream_name.clone()) {
+            Entry::Vacant(entry) => {
+                self.stream_names.push(stream_name);
+                entry.insert(route);
+                Ok(())
             }
-        };
-
-        insert_route(
-            stream_name,
-            route,
-            &mut stream_names,
-            &mut routes,
-            operation,
-        )?;
-    }
-
-    Ok(BinancePublicStreamPlan {
-        stream_names,
-        routes,
-    })
-}
-
-fn insert_route(
-    stream_name: String,
-    route: BinancePublicStreamRoute,
-    stream_names: &mut Vec<String>,
-    routes: &mut BTreeMap<String, BinancePublicStreamRoute>,
-    operation: &'static str,
-) -> Result<()> {
-    match routes.entry(stream_name.clone()) {
-        Entry::Vacant(entry) => {
-            stream_names.push(stream_name);
-            entry.insert(route);
-            Ok(())
+            Entry::Occupied(mut entry) => Self::merge_route(operation, entry.get_mut(), route),
         }
-        Entry::Occupied(mut entry) => merge_route(entry.get_mut(), route, operation),
-    }
-}
-
-fn merge_route(
-    existing: &mut BinancePublicStreamRoute,
-    route: BinancePublicStreamRoute,
-    operation: &'static str,
-) -> Result<()> {
-    if existing == &route {
-        return Ok(());
     }
 
-    match (existing, route) {
-        (
-            BinancePublicStreamRoute::Trade { outputs },
-            BinancePublicStreamRoute::Trade {
-                outputs: new_outputs,
-            },
-        ) => {
-            outputs.extend(new_outputs);
-            Ok(())
+    fn merge_route(
+        operation: &'static str,
+        existing: &mut BinancePublicStreamRoute,
+        route: BinancePublicStreamRoute,
+    ) -> Result<()> {
+        if existing == &route {
+            return Ok(());
         }
-        _ => Err(crate::error::invalid_field(
-            operation,
-            "subscriptions",
-            "conflicting Binance stream routes",
-        )),
-    }
-}
 
-fn trade_route(output: TradeOutput) -> BinancePublicStreamRoute {
-    let mut outputs = BTreeSet::new();
-    outputs.insert(output);
-    BinancePublicStreamRoute::Trade { outputs }
-}
-
-fn stream_symbol(symbol: &Symbol, operation: &'static str) -> Result<String> {
-    let symbol = crate::convert::require_spot_symbol(symbol, operation)?;
-    Ok(symbol.to_ascii_lowercase())
-}
-
-fn diff_depth_stream_name(
-    symbol: &Symbol,
-    speed: Option<BookDepthUpdateSpeed>,
-    operation: &'static str,
-) -> Result<String> {
-    let symbol = stream_symbol(symbol, operation)?;
-    Ok(match speed {
-        Some(speed) => {
-            let speed_name: &'static str = speed.into();
-            format!("{symbol}@depth@{speed_name}")
+        match (existing, route) {
+            (
+                BinancePublicStreamRoute::Trade { projection },
+                BinancePublicStreamRoute::Trade {
+                    projection: new_projection,
+                },
+            ) => {
+                *projection = (*projection).merge(new_projection);
+                Ok(())
+            }
+            _ => Err(crate::error::invalid_field(
+                operation,
+                "subscriptions",
+                "conflicting Binance stream routes",
+            )),
         }
-        None => format!("{symbol}@depth"),
-    })
-}
+    }
 
-fn partial_book_depth(depth: Option<u32>, operation: &'static str) -> Result<u32> {
-    match depth.unwrap_or(20) {
-        supported @ (5 | 10 | 20) => Ok(supported),
-        other => Err(crate::error::invalid_field(
-            operation,
-            "depth",
-            format!("Binance spot partial book streams support 5, 10, or 20 levels, got {other}"),
-        )),
+    fn trade_route(&self, projection: TradeProjection) -> BinancePublicStreamRoute {
+        BinancePublicStreamRoute::Trade { projection }
+    }
+
+    fn stream_symbol(&self, symbol: &Symbol) -> Result<String> {
+        let symbol = crate::convert::require_spot_symbol(symbol, self.operation)?;
+        Ok(symbol.to_ascii_lowercase())
+    }
+
+    fn diff_depth_stream_name(
+        &self,
+        symbol: &Symbol,
+        speed: Option<BookDepthUpdateSpeed>,
+    ) -> Result<BinanceStreamName> {
+        let symbol = self.stream_symbol(symbol)?;
+        Ok(self.named(match speed {
+            Some(speed) => {
+                let speed_name: &'static str = speed.into();
+                format!("{symbol}@depth@{speed_name}")
+            }
+            None => format!("{symbol}@depth"),
+        }))
+    }
+
+    fn partial_book_depth(&self, depth: Option<u32>) -> Result<u32> {
+        match depth.unwrap_or(20) {
+            supported @ (5 | 10 | 20) => Ok(supported),
+            other => Err(crate::error::invalid_field(
+                self.operation,
+                "depth",
+                format!(
+                    "Binance spot partial book streams support 5, 10, or 20 levels, got {other}"
+                ),
+            )),
+        }
+    }
+
+    fn named(&self, value: String) -> BinanceStreamName {
+        BinanceStreamName::new(value)
     }
 }
 
@@ -213,7 +294,7 @@ mod tests {
 
     #[test]
     fn public_stream_plan_maps_unified_subscriptions_to_spot_streams() {
-        let plan = build_public_stream_plan(
+        let plan = BinancePublicStreamPlan::build(
             &[
                 Subscription::LastPrice(Symbol::spot("BTCUSDT")),
                 Subscription::OrderBook {
@@ -251,7 +332,7 @@ mod tests {
         .expect("supported subscriptions should build");
 
         assert_eq!(
-            plan.stream_names,
+            stream_names(&plan),
             vec![
                 "btcusdt@trade",
                 "ethusdt@depth10",
@@ -277,7 +358,7 @@ mod tests {
 
     #[test]
     fn last_price_and_trades_share_one_trade_stream() {
-        let plan = build_public_stream_plan(
+        let plan = BinancePublicStreamPlan::build(
             &[
                 Subscription::LastPrice(Symbol::spot("BTCUSDT")),
                 Subscription::Trades(Symbol::spot("BTCUSDT")),
@@ -286,18 +367,18 @@ mod tests {
         )
         .expect("shared trade subscriptions should build");
 
-        assert_eq!(plan.stream_names, vec!["btcusdt@trade"]);
+        assert_eq!(stream_names(&plan), vec!["btcusdt@trade"]);
         assert!(matches!(
             plan.routes.get("btcusdt@trade"),
-            Some(BinancePublicStreamRoute::Trade { outputs })
-                if outputs.contains(&TradeOutput::LastPrice)
-                    && outputs.contains(&TradeOutput::Trade)
+            Some(BinancePublicStreamRoute::Trade {
+                projection: TradeProjection::LastPriceAndTrade,
+            })
         ));
     }
 
     #[test]
     fn public_stream_plan_rejects_non_spot_and_unsupported_depth() {
-        let non_spot = build_public_stream_plan(
+        let non_spot = BinancePublicStreamPlan::build(
             &[Subscription::Trades(Symbol::derivative(
                 mkt_types::DerivativeKind::perpetual(SettlementMode::Linear),
                 "BTCUSDT",
@@ -306,7 +387,7 @@ mod tests {
         );
         assert!(non_spot.is_err());
 
-        let bad_depth = build_public_stream_plan(
+        let bad_depth = BinancePublicStreamPlan::build(
             &[Subscription::OrderBook {
                 symbol: Symbol::spot("BTCUSDT"),
                 depth: Some(50),
@@ -318,7 +399,7 @@ mod tests {
 
     #[test]
     fn default_order_book_depth_uses_binance_max_partial_depth() {
-        let plan = build_public_stream_plan(
+        let plan = BinancePublicStreamPlan::build(
             &[Subscription::OrderBook {
                 symbol: Symbol::spot("BTCUSDT"),
                 depth: None,
@@ -327,6 +408,13 @@ mod tests {
         )
         .expect("default order book depth should build");
 
-        assert_eq!(plan.stream_names, vec!["btcusdt@depth20"]);
+        assert_eq!(stream_names(&plan), vec!["btcusdt@depth20"]);
+    }
+
+    fn stream_names(plan: &BinancePublicStreamPlan) -> Vec<&str> {
+        plan.stream_names
+            .iter()
+            .map(BinanceStreamName::as_ref)
+            .collect()
     }
 }
