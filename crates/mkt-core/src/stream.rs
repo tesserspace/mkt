@@ -55,9 +55,17 @@ pub enum RawPayload {
 #[async_trait]
 pub trait EventStream: Send {
     async fn next(&mut self) -> Result<Option<MarketDataEvent>>;
+
+    async fn close(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[async_trait]
 pub trait PrivateEventStream: Send {
     async fn next(&mut self) -> Result<Option<PrivateEvent>>;
+
+    async fn close(&mut self) -> Result<()> {
+        Ok(())
+    }
 }

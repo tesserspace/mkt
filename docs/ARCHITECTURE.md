@@ -189,7 +189,7 @@ strategy
   -> strategy
 ```
 
-`PublicSubscription` and `PrivateSubscription` describe requested stream topics. `PublicEventStream` and `PrivateEventStream` provide the unified async event interface.
+`PublicSubscription` and `PrivateSubscription` describe requested stream topics. `PublicEventStream` and `PrivateEventStream` provide the unified async event interface. Streams expose `next()` for events and `close()` for deterministic async shutdown; dropping a stream is only a best-effort fallback for adapters that own WebSocket tasks.
 
 ## Extension Architecture
 

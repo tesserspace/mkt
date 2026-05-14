@@ -20,3 +20,4 @@ mkt-types.workspace = true
 rust_decimal.workspace = true
 serde_json.workspace = true
 time.workspace = true
+tokio.workspace = true
