@@ -388,20 +388,41 @@ impl TradingConstraints {
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(pattern = "owned", setter(into))]
 pub struct MarketInfo {
+    /// Canonical exchange identifier for the venue that exposed this market.
     pub exchange_id: ExchangeId,
+    /// Unified symbol descriptor, including market kind and venue-specific symbol string.
     pub symbol: Symbol,
+    /// Current lifecycle status reported by the exchange.
     pub status: MarketStatus,
+    /// Venue-reported base asset code for this market.
     pub base_asset: String,
+    /// Venue-reported quote asset code for this market.
     pub quote_asset: String,
     #[builder(default)]
+    /// Exchange-reported precision for base-asset quantities at the symbol level, when available.
+    ///
+    /// This is raw venue metadata. It may differ from executable step-size filters and should not
+    /// be treated as a substitute for lot-size validation.
     pub base_asset_precision: Option<i64>,
     #[builder(default)]
+    /// Exchange-reported precision for quote-denominated values at the symbol level, when
+    /// available.
+    ///
+    /// On venues such as Binance spot, this is the most relevant symbol-level precision hint for
+    /// quote-sized order entry like `quoteOrderQty`.
     pub quote_precision: Option<i64>,
     #[builder(default)]
+    /// Exchange-reported precision for the quote asset at the symbol level, when available.
+    ///
+    /// Some venues expose both `quote_precision` and `quote_asset_precision`. When they differ,
+    /// adapter code should prefer the field that the venue documents for order-entry precision and
+    /// treat this field as auxiliary metadata or fallback.
     pub quote_asset_precision: Option<i64>,
     #[builder(default)]
+    /// Venue capabilities describing which order types, sides, and quantity modes are supported.
     pub trading_permissions: TradingPermissions,
     #[builder(default)]
+    /// Venue execution constraints such as price filters, lot sizes, and notional limits.
     pub trading_constraints: TradingConstraints,
 }
 
