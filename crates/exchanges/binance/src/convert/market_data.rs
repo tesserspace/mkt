@@ -243,6 +243,9 @@ pub(crate) fn market_info_from_exchange_symbol(
                 .quote_asset
                 .ok_or_else(|| crate::error::missing_field(operation, "quoteAsset"))?,
         )
+        .base_asset_precision(symbol_definition.base_asset_precision)
+        .quote_precision(symbol_definition.quote_precision)
+        .quote_asset_precision(symbol_definition.quote_asset_precision)
         .trading_permissions(trading_permissions)
         .trading_constraints(trading_constraints)
         .build()
@@ -371,6 +374,64 @@ pub(crate) fn trades_from_recent_response(
                 .map_err(|err| crate::error::invalid_field(operation, "trade", err.to_string()))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::market_info_from_exchange_symbol;
+    use binance_sdk::spot::rest_api::{
+        ExchangeInfoResponseSymbolsInner, ExchangeInfoSymbolStatusEnum, LotSizeFilter,
+        PriceFilter, SymbolFilters,
+    };
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn market_info_preserves_symbol_precision_fields() {
+        let symbol = ExchangeInfoResponseSymbolsInner {
+            symbol: Some(String::from("BTCUSDT")),
+            status: Some(ExchangeInfoSymbolStatusEnum::Trading.as_str().to_string()),
+            base_asset: Some(String::from("BTC")),
+            base_asset_precision: Some(8),
+            quote_asset: Some(String::from("USDT")),
+            quote_precision: Some(8),
+            quote_asset_precision: Some(8),
+            order_types: Some(vec![String::from("MARKET")]),
+            quote_order_qty_market_allowed: Some(true),
+            is_spot_trading_allowed: Some(true),
+            filters: Some(vec![
+                SymbolFilters::PriceFilter(Box::new(PriceFilter {
+                    filter_type: Some(String::from("PRICE_FILTER")),
+                    price_exponent: None,
+                    min_price: Some(String::from("0.01000000")),
+                    max_price: Some(String::from("1000000.00000000")),
+                    tick_size: Some(String::from("0.01000000")),
+                })),
+                SymbolFilters::LotSize(Box::new(LotSizeFilter {
+                    filter_type: Some(String::from("LOT_SIZE")),
+                    qty_exponent: None,
+                    min_qty: Some(String::from("0.00001000")),
+                    max_qty: Some(String::from("9000.00000000")),
+                    step_size: Some(String::from("0.00001000")),
+                })),
+            ]),
+            ..ExchangeInfoResponseSymbolsInner::new()
+        };
+
+        let market = market_info_from_exchange_symbol(symbol, "spot.exchange_info")
+            .expect("market should convert");
+
+        assert_eq!(market.base_asset_precision, Some(8));
+        assert_eq!(market.quote_precision, Some(8));
+        assert_eq!(market.quote_asset_precision, Some(8));
+        assert_eq!(
+            market
+                .trading_constraints
+                .price_filter
+                .and_then(|filter| filter.tick_size),
+            Some(Decimal::from_str("0.01").expect("decimal"))
+        );
+    }
 }
 
 pub(crate) fn klines_from_rows(

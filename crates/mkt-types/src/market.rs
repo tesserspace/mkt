@@ -394,6 +394,12 @@ pub struct MarketInfo {
     pub base_asset: String,
     pub quote_asset: String,
     #[builder(default)]
+    pub base_asset_precision: Option<i64>,
+    #[builder(default)]
+    pub quote_precision: Option<i64>,
+    #[builder(default)]
+    pub quote_asset_precision: Option<i64>,
+    #[builder(default)]
     pub trading_permissions: TradingPermissions,
     #[builder(default)]
     pub trading_constraints: TradingConstraints,
