@@ -80,6 +80,16 @@ pub enum OrderStatus {
     Expired,
 }
 
+impl OrderStatus {
+    pub fn is_open(self) -> bool {
+        matches!(self, Self::New | Self::PartiallyFilled)
+    }
+
+    pub fn is_terminal(self) -> bool {
+        !self.is_open()
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString)]
@@ -153,7 +163,7 @@ impl SpotOrderRequestBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{OrderQuantity, OrderSide, OrderType, SpotOrderRequest};
+    use super::{OrderQuantity, OrderSide, OrderStatus, OrderType, SpotOrderRequest};
     use crate::Symbol;
     use rust_decimal::Decimal;
 
@@ -188,6 +198,23 @@ mod tests {
         assert!(zero_quote
             .to_string()
             .contains("quote quantity must be greater than zero"));
+    }
+
+    #[test]
+    fn order_status_helpers_follow_order_lifecycle() {
+        assert!(OrderStatus::New.is_open());
+        assert!(OrderStatus::PartiallyFilled.is_open());
+        assert!(!OrderStatus::Filled.is_open());
+        assert!(!OrderStatus::Canceled.is_open());
+        assert!(!OrderStatus::Rejected.is_open());
+        assert!(!OrderStatus::Expired.is_open());
+
+        assert!(!OrderStatus::New.is_terminal());
+        assert!(!OrderStatus::PartiallyFilled.is_terminal());
+        assert!(OrderStatus::Filled.is_terminal());
+        assert!(OrderStatus::Canceled.is_terminal());
+        assert!(OrderStatus::Rejected.is_terminal());
+        assert!(OrderStatus::Expired.is_terminal());
     }
 }
 

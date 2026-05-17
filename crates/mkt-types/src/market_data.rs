@@ -290,6 +290,46 @@ impl Kline {
     pub fn builder() -> KlineBuilder {
         KlineBuilder::default()
     }
+
+    pub fn dedup(klines: impl IntoIterator<Item = Self>) -> Vec<Self> {
+        let mut deduped = Vec::new();
+
+        for kline in klines {
+            if let Some(existing) = deduped.iter_mut().find(|existing: &&mut Self| {
+                existing.symbol == kline.symbol
+                    && existing.interval == kline.interval
+                    && existing.open_time == kline.open_time
+            }) {
+                *existing = kline;
+            } else {
+                deduped.push(kline);
+            }
+        }
+
+        deduped.sort_by_key(|kline| kline.open_time);
+        deduped
+    }
+
+    pub fn merge(
+        left: impl IntoIterator<Item = Self>,
+        right: impl IntoIterator<Item = Self>,
+    ) -> Vec<Self> {
+        Self::dedup(left.into_iter().chain(right))
+    }
+
+    pub fn window(
+        klines: impl IntoIterator<Item = Self>,
+        start: Option<OffsetDateTime>,
+        end: Option<OffsetDateTime>,
+    ) -> Vec<Self> {
+        klines
+            .into_iter()
+            .filter(|kline| {
+                start.is_none_or(|start| kline.open_time >= start)
+                    && end.is_none_or(|end| kline.open_time < end)
+            })
+            .collect()
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -485,7 +525,35 @@ impl MiniTicker {
 
 #[cfg(test)]
 mod tests {
-    use super::KlineInterval;
+    use super::{Kline, KlineInterval};
+    use crate::Symbol;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+    use time::OffsetDateTime;
+
+    fn decimal(value: &str) -> Decimal {
+        Decimal::from_str(value).expect("test decimal must be valid")
+    }
+
+    fn timestamp(value: i64) -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(value).expect("test timestamp must be valid")
+    }
+
+    fn kline(symbol: &str, open_time: i64, close: &str) -> Kline {
+        Kline::builder()
+            .symbol(Symbol::spot(symbol))
+            .interval(KlineInterval::M1)
+            .open_time(timestamp(open_time))
+            .close_time(timestamp(open_time + 60))
+            .open(decimal(close))
+            .high(decimal(close))
+            .low(decimal(close))
+            .close(decimal(close))
+            .volume_base(decimal("1"))
+            .closed(true)
+            .build()
+            .expect("kline must build")
+    }
 
     #[test]
     fn common_intervals_parse_to_duration_backed_values() {
@@ -500,5 +568,51 @@ mod tests {
 
         assert_eq!(interval, KlineInterval::Month(3));
         assert_eq!(interval.to_string(), "3M");
+    }
+
+    #[test]
+    fn kline_dedup_replaces_matching_entries_and_keeps_other_series() {
+        let first = kline("BTCUSDT", 60, "100");
+        let replacement = kline("BTCUSDT", 60, "101");
+        let other_symbol = kline("ETHUSDT", 60, "200");
+
+        let deduped = Kline::dedup([first, other_symbol.clone(), replacement.clone()]);
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0], replacement);
+        assert_eq!(deduped[1], other_symbol);
+    }
+
+    #[test]
+    fn kline_merge_sorts_by_open_time_and_uses_latest_duplicate() {
+        let one = kline("BTCUSDT", 60, "1");
+        let three = kline("BTCUSDT", 180, "3");
+        let two = kline("BTCUSDT", 120, "2");
+        let replacement = kline("BTCUSDT", 180, "33");
+
+        let merged = Kline::merge([one.clone(), three], [replacement.clone(), two.clone()]);
+
+        assert_eq!(merged, vec![one, two, replacement]);
+    }
+
+    #[test]
+    fn kline_window_filters_by_half_open_open_time_range() {
+        let one = kline("BTCUSDT", 60, "1");
+        let two = kline("BTCUSDT", 120, "2");
+        let three = kline("BTCUSDT", 180, "3");
+
+        let middle = Kline::window(
+            [one.clone(), two.clone(), three.clone()],
+            Some(timestamp(120)),
+            Some(timestamp(180)),
+        );
+        assert_eq!(middle, vec![two.clone()]);
+
+        let trailing = Kline::window(
+            [one, two.clone(), three.clone()],
+            Some(timestamp(120)),
+            None,
+        );
+        assert_eq!(trailing, vec![two, three]);
     }
 }

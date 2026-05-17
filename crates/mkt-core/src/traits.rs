@@ -18,6 +18,7 @@ pub trait ExchangeInfo: Send + Sync {
 #[async_trait]
 pub trait MarketData: Send + Sync {
     async fn markets(&self) -> Result<Vec<MarketInfo>>;
+    async fn market(&self, symbol: &Symbol) -> Result<Option<MarketInfo>>;
     async fn last_price(&self, symbol: &Symbol) -> Result<LastPrice>;
     async fn last_prices(&self, symbols: Option<&[Symbol]>) -> Result<Vec<LastPrice>>;
     async fn order_book(&self, symbol: &Symbol, depth: Option<u16>) -> Result<OrderBook>;

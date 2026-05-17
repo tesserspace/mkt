@@ -23,15 +23,8 @@ impl BinanceMarketData {
     pub(crate) fn new(inner: Arc<BinanceInner>) -> Self {
         Self { inner }
     }
-}
 
-#[async_trait]
-impl MarketData for BinanceMarketData {
-    async fn markets(&self) -> Result<Vec<MarketInfo>> {
-        let params = ExchangeInfoParams::builder()
-            .show_permission_sets(false)
-            .build()
-            .map_err(|err| error::adapter_error(EXCHANGE_INFO_OPERATION, err.to_string()))?;
+    async fn exchange_info(&self, params: ExchangeInfoParams) -> Result<Vec<MarketInfo>> {
         let response = self
             .inner
             .spot_rest
@@ -50,6 +43,38 @@ impl MarketData for BinanceMarketData {
                 convert::market_info_from_exchange_symbol(symbol, EXCHANGE_INFO_OPERATION)
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl MarketData for BinanceMarketData {
+    async fn markets(&self) -> Result<Vec<MarketInfo>> {
+        let params = ExchangeInfoParams::builder()
+            .show_permission_sets(false)
+            .build()
+            .map_err(|err| error::adapter_error(EXCHANGE_INFO_OPERATION, err.to_string()))?;
+        self.exchange_info(params).await
+    }
+
+    async fn market(&self, symbol: &Symbol) -> Result<Option<MarketInfo>> {
+        let params = ExchangeInfoParams::builder()
+            .symbol(convert::require_spot_symbol(
+                symbol,
+                EXCHANGE_INFO_OPERATION,
+            )?)
+            .show_permission_sets(false)
+            .build()
+            .map_err(|err| error::adapter_error(EXCHANGE_INFO_OPERATION, err.to_string()))?;
+        let mut markets = self.exchange_info(params).await?;
+        match markets.len() {
+            0 => Ok(None),
+            1 => Ok(markets.pop()),
+            _ => Err(error::invalid_field(
+                EXCHANGE_INFO_OPERATION,
+                "symbol",
+                "expected a single-symbol exchange info response",
+            )),
+        }
     }
 
     async fn last_price(&self, symbol: &Symbol) -> Result<LastPrice> {
