@@ -5,8 +5,8 @@ pub use mkt_types as types;
 
 pub mod prelude {
     pub use mkt_core::{
-        Account, ExchangeHandle, ExchangeInfo, FuturesTrading, MarketData, PrivateStream,
-        PublicStream, SpotTrading,
+        Account, ExchangeHandle, ExchangeInfo, FuturesTrading, MarketData, MarketDataExt,
+        PrivateStream, PublicStream, SpotTrading,
     };
     pub use mkt_types::{
         Balance, Decimal, ExchangeId, FuturesOrderRequest, Kline, KlineInterval, KnownExchange,
