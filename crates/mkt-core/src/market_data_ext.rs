@@ -76,8 +76,7 @@ mod tests {
     use async_trait::async_trait;
     use mkt_types::{
         Decimal, ExchangeId, Kline, KlineInterval, KlineRequest, KnownExchange, LastPrice,
-        MarketInfo, MarketStatus, OrderBook, Symbol, Trade, TradingConstraints,
-        TradingPermissions,
+        MarketInfo, MarketStatus, OrderBook, Symbol, Trade, TradingConstraints, TradingPermissions,
     };
     use time::OffsetDateTime;
 
