@@ -114,7 +114,7 @@ mod tests {
                 Some(symbols) => self
                     .prices
                     .iter()
-                    .filter(|price| symbols.iter().any(|symbol| *symbol == price.symbol))
+                    .filter(|price| symbols.contains(&price.symbol))
                     .cloned()
                     .collect(),
                 None => self.prices.clone(),
