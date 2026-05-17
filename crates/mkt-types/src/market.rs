@@ -341,6 +341,18 @@ impl QuantityModeSupport {
     pub fn builder() -> QuantityModeSupportBuilder {
         QuantityModeSupportBuilder::default()
     }
+
+    fn supports_order_type(&self, order_type: crate::OrderType) -> bool {
+        self.order_types.is_empty() || self.order_types.contains(&order_type)
+    }
+
+    fn supports_side(&self, side: crate::OrderSide) -> bool {
+        self.sides.is_empty() || self.sides.contains(&side)
+    }
+
+    fn supports(&self, order_type: crate::OrderType, side: crate::OrderSide) -> bool {
+        self.supports_order_type(order_type) && self.supports_side(side)
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -359,6 +371,26 @@ pub struct TradingPermissions {
 impl TradingPermissions {
     pub fn builder() -> TradingPermissionsBuilder {
         TradingPermissionsBuilder::default()
+    }
+
+    pub fn allows_spot_order_entry(&self) -> bool {
+        self.spot_order_entry_allowed.unwrap_or(true)
+    }
+
+    pub fn supports_order_type(&self, order_type: crate::OrderType) -> bool {
+        self.supported_order_types.contains(&order_type)
+    }
+
+    pub fn supports_quantity_mode(
+        &self,
+        mode: MarketQuantityMode,
+        order_type: crate::OrderType,
+        side: crate::OrderSide,
+    ) -> bool {
+        self.quantity_mode_support
+            .iter()
+            .filter(|support| support.mode == mode)
+            .any(|support| support.supports(order_type, side))
     }
 }
 
@@ -380,6 +412,15 @@ pub struct TradingConstraints {
 impl TradingConstraints {
     pub fn builder() -> TradingConstraintsBuilder {
         TradingConstraintsBuilder::default()
+    }
+
+    fn lot_size_for(&self, order_type: crate::OrderType) -> Option<&LotSizeFilter> {
+        match order_type {
+            crate::OrderType::Market | crate::OrderType::StopMarket => {
+                self.market_lot_size.as_ref().or(self.lot_size.as_ref())
+            }
+            _ => self.lot_size.as_ref().or(self.market_lot_size.as_ref()),
+        }
     }
 }
 
@@ -429,5 +470,295 @@ pub struct MarketInfo {
 impl MarketInfo {
     pub fn builder() -> MarketInfoBuilder {
         MarketInfoBuilder::default()
+    }
+
+    pub fn is_trading(&self) -> bool {
+        matches!(self.status, MarketStatus::Trading)
+    }
+
+    pub fn allows_spot_order_entry(&self) -> bool {
+        self.trading_permissions.allows_spot_order_entry()
+    }
+
+    pub fn tick_size(&self) -> Option<Decimal> {
+        self.trading_constraints
+            .price_filter
+            .as_ref()
+            .and_then(|filter| filter.tick_size)
+            .filter(|value| *value > Decimal::ZERO)
+    }
+
+    pub fn quote_scale(&self) -> Option<u32> {
+        self.quote_precision
+            .and_then(|scale| u32::try_from(scale).ok())
+            .or_else(|| {
+                self.quote_asset_precision
+                    .and_then(|scale| u32::try_from(scale).ok())
+            })
+    }
+
+    pub fn min_notional_or(&self, fallback: Decimal) -> Decimal {
+        self.trading_constraints
+            .notional
+            .as_ref()
+            .and_then(|constraints| constraints.min_notional)
+            .filter(|value| *value > Decimal::ZERO)
+            .unwrap_or(fallback)
+            .max(fallback)
+    }
+
+    pub fn lot_size_for(&self, order_type: crate::OrderType) -> Option<&LotSizeFilter> {
+        self.trading_constraints.lot_size_for(order_type)
+    }
+
+    pub fn min_quantity(&self, order_type: crate::OrderType) -> Option<Decimal> {
+        self.positive_lot_size_value(order_type, |filter| filter.min_quantity)
+    }
+
+    pub fn max_quantity(&self, order_type: crate::OrderType) -> Option<Decimal> {
+        self.positive_lot_size_value(order_type, |filter| filter.max_quantity)
+    }
+
+    pub fn step_size(&self, order_type: crate::OrderType) -> Option<Decimal> {
+        self.positive_lot_size_value(order_type, |filter| filter.step_size)
+    }
+
+    fn positive_lot_size_value(
+        &self,
+        order_type: crate::OrderType,
+        value: impl Fn(&LotSizeFilter) -> Option<Decimal>,
+    ) -> Option<Decimal> {
+        let trading_constraints = &self.trading_constraints;
+        let (primary, fallback) = match order_type {
+            crate::OrderType::Market | crate::OrderType::StopMarket => (
+                trading_constraints.market_lot_size.as_ref(),
+                trading_constraints.lot_size.as_ref(),
+            ),
+            _ => (
+                trading_constraints.lot_size.as_ref(),
+                trading_constraints.market_lot_size.as_ref(),
+            ),
+        };
+
+        primary
+            .and_then(&value)
+            .filter(|current| *current > Decimal::ZERO)
+            .or_else(|| {
+                fallback
+                    .and_then(value)
+                    .filter(|current| *current > Decimal::ZERO)
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LotSizeFilter, MarketInfo, MarketQuantityMode, MarketStatus, NotionalConstraints,
+        PriceFilter, QuantityModeSupport, TradingConstraints, TradingPermissions,
+    };
+    use crate::{ExchangeId, KnownExchange, OrderSide, OrderType, Symbol};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    fn decimal(value: &str) -> Decimal {
+        Decimal::from_str(value).expect("test decimal must be valid")
+    }
+
+    fn lot_size(min_quantity: &str, max_quantity: &str, step_size: &str) -> LotSizeFilter {
+        LotSizeFilter::builder()
+            .min_quantity(decimal(min_quantity))
+            .max_quantity(decimal(max_quantity))
+            .step_size(decimal(step_size))
+            .build()
+            .expect("lot size must build")
+    }
+
+    fn market_info(
+        status: MarketStatus,
+        trading_permissions: TradingPermissions,
+        trading_constraints: TradingConstraints,
+    ) -> MarketInfo {
+        MarketInfo::builder()
+            .exchange_id(ExchangeId::from(KnownExchange::Binance))
+            .symbol(Symbol::spot("BTCUSDT"))
+            .status(status)
+            .base_asset("BTC")
+            .quote_asset("USDT")
+            .quote_precision(8)
+            .quote_asset_precision(6)
+            .trading_permissions(trading_permissions)
+            .trading_constraints(trading_constraints)
+            .build()
+            .expect("market info must build")
+    }
+
+    #[test]
+    fn trading_permissions_helpers_use_expected_defaults() {
+        let unknown = TradingPermissions::default();
+        assert!(unknown.allows_spot_order_entry());
+        assert!(!unknown.supports_order_type(OrderType::Limit));
+        assert!(!unknown.supports_quantity_mode(
+            MarketQuantityMode::Base,
+            OrderType::Limit,
+            OrderSide::Buy
+        ));
+
+        let permissions = TradingPermissions::builder()
+            .spot_order_entry_allowed(Some(false))
+            .supported_order_types([OrderType::Limit, OrderType::Market])
+            .quantity_mode_support(vec![
+                QuantityModeSupport::builder()
+                    .mode(MarketQuantityMode::Base)
+                    .order_types([OrderType::Limit])
+                    .sides([OrderSide::Buy, OrderSide::Sell])
+                    .build()
+                    .expect("base support must build"),
+                QuantityModeSupport::builder()
+                    .mode(MarketQuantityMode::Quote)
+                    .order_types([OrderType::Market])
+                    .sides([OrderSide::Buy])
+                    .build()
+                    .expect("quote support must build"),
+            ])
+            .build()
+            .expect("permissions must build");
+
+        assert!(!permissions.allows_spot_order_entry());
+        assert!(permissions.supports_order_type(OrderType::Limit));
+        assert!(!permissions.supports_order_type(OrderType::PostOnly));
+        assert!(permissions.supports_quantity_mode(
+            MarketQuantityMode::Base,
+            OrderType::Limit,
+            OrderSide::Buy
+        ));
+        assert!(!permissions.supports_quantity_mode(
+            MarketQuantityMode::Base,
+            OrderType::Market,
+            OrderSide::Buy
+        ));
+        assert!(permissions.supports_quantity_mode(
+            MarketQuantityMode::Quote,
+            OrderType::Market,
+            OrderSide::Buy
+        ));
+        assert!(!permissions.supports_quantity_mode(
+            MarketQuantityMode::Quote,
+            OrderType::Market,
+            OrderSide::Sell
+        ));
+    }
+
+    #[test]
+    fn market_info_helpers_pick_effective_constraints() {
+        let limit_lot = lot_size("0.01", "50", "0.01");
+        let market_lot = lot_size("0.2", "2", "0.2");
+        let market = market_info(
+            MarketStatus::Trading,
+            TradingPermissions::default(),
+            TradingConstraints::builder()
+                .price_filter(
+                    PriceFilter::builder()
+                        .tick_size(decimal("0.25"))
+                        .build()
+                        .expect("price filter must build"),
+                )
+                .lot_size(limit_lot.clone())
+                .market_lot_size(market_lot.clone())
+                .notional(
+                    NotionalConstraints::builder()
+                        .min_notional(decimal("12"))
+                        .build()
+                        .expect("notional must build"),
+                )
+                .build()
+                .expect("constraints must build"),
+        );
+
+        assert!(market.is_trading());
+        assert!(market.allows_spot_order_entry());
+        assert_eq!(market.tick_size(), Some(decimal("0.25")));
+        assert_eq!(market.quote_scale(), Some(8));
+        assert_eq!(market.min_notional_or(decimal("10")), decimal("12"));
+        assert_eq!(market.step_size(OrderType::Limit), Some(decimal("0.01")));
+        assert_eq!(market.step_size(OrderType::Market), Some(decimal("0.2")));
+        assert_eq!(market.min_quantity(OrderType::Limit), Some(decimal("0.01")));
+        assert_eq!(market.min_quantity(OrderType::Market), Some(decimal("0.2")));
+        assert_eq!(market.max_quantity(OrderType::Market), Some(decimal("2")));
+        assert_eq!(market.lot_size_for(OrderType::Limit), Some(&limit_lot));
+        assert_eq!(
+            market.lot_size_for(OrderType::StopMarket),
+            Some(&market_lot)
+        );
+    }
+
+    #[test]
+    fn market_info_helpers_filter_non_positive_values_and_fallback() {
+        let zero_lot = lot_size("0", "0", "0");
+        let market = market_info(
+            MarketStatus::Halted,
+            TradingPermissions::builder()
+                .spot_order_entry_allowed(Some(true))
+                .build()
+                .expect("permissions must build"),
+            TradingConstraints::builder()
+                .price_filter(
+                    PriceFilter::builder()
+                        .tick_size(decimal("0"))
+                        .build()
+                        .expect("price filter must build"),
+                )
+                .lot_size(zero_lot)
+                .notional(
+                    NotionalConstraints::builder()
+                        .min_notional(decimal("0"))
+                        .build()
+                        .expect("notional must build"),
+                )
+                .build()
+                .expect("constraints must build"),
+        );
+
+        assert!(!market.is_trading());
+        assert!(market.allows_spot_order_entry());
+        assert_eq!(market.tick_size(), None);
+        assert_eq!(market.min_quantity(OrderType::Limit), None);
+        assert_eq!(market.max_quantity(OrderType::Market), None);
+        assert_eq!(market.step_size(OrderType::Market), None);
+        assert_eq!(market.min_notional_or(decimal("10")), decimal("10"));
+    }
+
+    #[test]
+    fn market_order_constraints_fall_back_per_field() {
+        let limit_lot = lot_size("0.01", "100", "0.01");
+        let market_lot = lot_size("0", "50", "0");
+        let market = market_info(
+            MarketStatus::Trading,
+            TradingPermissions::default(),
+            TradingConstraints::builder()
+                .lot_size(limit_lot)
+                .market_lot_size(market_lot)
+                .build()
+                .expect("constraints must build"),
+        );
+
+        assert_eq!(
+            market.min_quantity(OrderType::Market),
+            Some(decimal("0.01"))
+        );
+        assert_eq!(market.max_quantity(OrderType::Market), Some(decimal("50")));
+        assert_eq!(market.step_size(OrderType::Market), Some(decimal("0.01")));
+        assert_eq!(
+            market.min_quantity(OrderType::StopMarket),
+            Some(decimal("0.01"))
+        );
+        assert_eq!(
+            market.max_quantity(OrderType::StopMarket),
+            Some(decimal("50"))
+        );
+        assert_eq!(
+            market.step_size(OrderType::StopMarket),
+            Some(decimal("0.01"))
+        );
     }
 }
