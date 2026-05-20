@@ -168,7 +168,7 @@ pub(super) fn parse_required_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Decimal> {
-    common::parse_decimal(
+    Decimal::from_str(
         raw.ok_or_else(|| crate::error::missing_field(operation, field))?
             .as_str(),
     )
@@ -180,8 +180,11 @@ pub(super) fn parse_optional_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Option<Decimal>> {
-    common::parse_optional_decimal(raw)
-        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
+    raw.map(|value| {
+        Decimal::from_str(value.as_str())
+            .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
+    })
+    .transpose()
 }
 
 pub(super) fn parse_required_unix_millis_timestamp(
@@ -201,8 +204,8 @@ pub(super) fn parse_optional_unix_millis_timestamp(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Option<OffsetDateTime>> {
-    common::parse_optional_unix_millis_timestamp(raw)
-        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
+    raw.map(|timestamp_millis| parse_unix_millis_timestamp(timestamp_millis, operation, field))
+        .transpose()
 }
 
 pub(super) fn parse_unix_millis_timestamp(

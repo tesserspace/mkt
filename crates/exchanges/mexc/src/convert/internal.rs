@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use mkt_core::Result;
 use mkt_exchange_common as common;
 use mkt_types::{KlineInterval, MarketKind, Symbol};
@@ -9,7 +11,7 @@ pub(super) fn parse_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Decimal> {
-    common::parse_decimal(raw.as_str())
+    Decimal::from_str(raw.as_str())
         .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
@@ -30,8 +32,8 @@ pub(super) fn parse_optional_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Option<Decimal>> {
-    common::parse_optional_decimal(raw)
-        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
+    raw.map(|value| parse_decimal(value, operation, field))
+        .transpose()
 }
 
 pub(super) fn parse_required_i64(
@@ -109,7 +111,7 @@ pub(super) fn value_to_string(value: serde_json::Value) -> String {
 }
 
 pub(super) fn closed_from_close_time(close_time: OffsetDateTime) -> bool {
-    common::closed_from_close_time(close_time)
+    close_time < OffsetDateTime::now_utc()
 }
 
 pub(crate) fn require_spot_symbol(symbol: &Symbol, operation: &'static str) -> Result<String> {

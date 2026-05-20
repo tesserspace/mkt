@@ -1,5 +1,6 @@
+use std::str::FromStr;
+
 use mkt_core::Result;
-use mkt_exchange_common as common;
 use mkt_types::{MiniTicker, Symbol};
 use rust_decimal::Decimal;
 
@@ -59,6 +60,6 @@ fn mini_ticker_from_fields(
 }
 
 fn parse_decimal(raw: String, operation: &'static str, field: &'static str) -> Result<Decimal> {
-    common::parse_decimal(raw.as_str())
+    Decimal::from_str(raw.as_str())
         .map_err(|err| error::invalid_field(operation, field, err.to_string()))
 }

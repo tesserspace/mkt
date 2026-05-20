@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use mkt_core::Result;
-use mkt_exchange_common as common;
 use mkt_types::{BookTicker, OrderBook, OrderBookDelta, OrderBookLevel, Symbol};
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use super::super::internal;
@@ -104,10 +106,10 @@ fn levels_from_response(
             }
 
             Ok(OrderBookLevel::new(
-                common::parse_decimal(level[0].as_str()).map_err(|err| {
+                Decimal::from_str(level[0].as_str()).map_err(|err| {
                     crate::error::invalid_field(operation, field, err.to_string())
                 })?,
-                common::parse_decimal(level[1].as_str()).map_err(|err| {
+                Decimal::from_str(level[1].as_str()).map_err(|err| {
                     crate::error::invalid_field(operation, field, err.to_string())
                 })?,
             ))

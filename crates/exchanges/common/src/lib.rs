@@ -1,32 +1,9 @@
-use std::{fmt::Display, str::FromStr};
-
 use hmac::{Hmac, Mac};
-use rust_decimal::Decimal;
 use sha2::Sha256;
 use time::OffsetDateTime;
 use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
-
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseDecimalError {
-    message: String,
-}
-
-impl ParseDecimalError {
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
-impl std::fmt::Display for ParseDecimalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ParseDecimalError {}
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,16 +24,6 @@ impl std::fmt::Display for TimestampError {
 }
 
 impl std::error::Error for TimestampError {}
-
-pub fn parse_decimal(raw: &str) -> Result<Decimal, ParseDecimalError> {
-    Decimal::from_str(raw).map_err(|err| ParseDecimalError {
-        message: err.to_string(),
-    })
-}
-
-pub fn parse_optional_decimal(raw: Option<String>) -> Result<Option<Decimal>, ParseDecimalError> {
-    raw.map(|value| parse_decimal(value.as_str())).transpose()
-}
 
 pub fn parse_unix_millis_timestamp(
     timestamp_millis: i64,
@@ -88,12 +55,6 @@ pub fn parse_unix_seconds_timestamp(
     })
 }
 
-pub fn parse_optional_unix_millis_timestamp(
-    raw: Option<i64>,
-) -> Result<Option<OffsetDateTime>, TimestampError> {
-    raw.map(parse_unix_millis_timestamp).transpose()
-}
-
 pub fn unix_timestamp_millis(timestamp: OffsetDateTime) -> Result<i64, TimestampError> {
     let timestamp_millis = timestamp.unix_timestamp_nanos() / 1_000_000;
     i64::try_from(timestamp_millis).map_err(|_| TimestampError {
@@ -108,10 +69,6 @@ pub fn value_to_string(value: &serde_json::Value) -> String {
     }
 }
 
-pub fn closed_from_close_time(close_time: OffsetDateTime) -> bool {
-    close_time < OffsetDateTime::now_utc()
-}
-
 pub fn closed_from_unix_seconds(timestamp_seconds: i64) -> bool {
     parse_unix_seconds_timestamp(timestamp_seconds)
         .is_ok_and(|close_time| close_time <= OffsetDateTime::now_utc())
@@ -123,7 +80,7 @@ pub fn hmac_sha256_hex(secret: &[u8], payload: &str) -> Result<String, String> {
     Ok(hex_lower(mac.finalize().into_bytes().as_slice()))
 }
 
-pub fn hex_lower(bytes: &[u8]) -> String {
+fn hex_lower(bytes: &[u8]) -> String {
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         use std::fmt::Write as _;
@@ -150,10 +107,6 @@ where
         serializer.append_pair(key.as_ref(), value.as_ref());
     }
     serializer.finish()
-}
-
-pub fn query_pair(key: &'static str, value: impl Display) -> (&'static str, String) {
-    (key, value.to_string())
 }
 
 #[cfg(test)]

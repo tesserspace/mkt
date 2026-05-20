@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use mkt_core::Result;
 use mkt_exchange_common as common;
 use mkt_types::{Kline, KlineInterval, Symbol};
@@ -90,7 +92,7 @@ pub(crate) fn kline_from_proto(
 }
 
 fn parse_decimal(raw: String, operation: &'static str, field: &'static str) -> Result<Decimal> {
-    common::parse_decimal(raw.as_str())
+    Decimal::from_str(raw.as_str())
         .map_err(|err| error::invalid_field(operation, field, err.to_string()))
 }
 

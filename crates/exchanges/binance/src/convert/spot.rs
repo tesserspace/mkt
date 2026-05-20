@@ -5,7 +5,6 @@ use binance_sdk::spot::rest_api::{
     NewOrderParams,
 };
 use mkt_core::Result;
-use mkt_exchange_common as common;
 use mkt_types::{
     Balance, Fill, KlineInterval, KlineRequest, OrderKey, OrderQuantity, SpotOrderRequest,
 };
@@ -255,27 +254,28 @@ pub(crate) fn fill_from_trade(
         Some(false) => mkt_types::OrderSide::Sell,
         None => return Err(crate::error::missing_field(operation, "isBuyer")),
     };
-    let price = common::parse_decimal(
+    let price = rust_decimal::Decimal::from_str(
         trade
             .price
             .ok_or_else(|| crate::error::missing_field(operation, "price"))?
             .as_str(),
     )
     .map_err(|err| crate::error::invalid_field(operation, "price", err.to_string()))?;
-    let quantity = common::parse_decimal(
+    let quantity = rust_decimal::Decimal::from_str(
         trade
             .qty
             .ok_or_else(|| crate::error::missing_field(operation, "qty"))?
             .as_str(),
     )
     .map_err(|err| crate::error::invalid_field(operation, "qty", err.to_string()))?;
-    let quote_quantity =
-        match trade.quote_qty {
-            Some(raw) => Some(common::parse_decimal(raw.as_str()).map_err(|err| {
+    let quote_quantity = match trade.quote_qty {
+        Some(raw) => Some(
+            rust_decimal::Decimal::from_str(raw.as_str()).map_err(|err| {
                 crate::error::invalid_field(operation, "quoteQty", err.to_string())
-            })?),
-            None => None,
-        };
+            })?,
+        ),
+        None => None,
+    };
     let timestamp_ms = trade
         .time
         .ok_or_else(|| crate::error::missing_field(operation, "time"))?;
@@ -307,9 +307,11 @@ pub(crate) fn fill_from_trade(
         .quantity(quantity)
         .quote_quantity(quote_quantity)
         .fee(match trade.commission {
-            Some(raw) => Some(common::parse_decimal(raw.as_str()).map_err(|err| {
-                crate::error::invalid_field(operation, "commission", err.to_string())
-            })?),
+            Some(raw) => Some(
+                rust_decimal::Decimal::from_str(raw.as_str()).map_err(|err| {
+                    crate::error::invalid_field(operation, "commission", err.to_string())
+                })?,
+            ),
             None => None,
         })
         .fee_asset(trade.commission_asset)
@@ -324,14 +326,14 @@ pub(crate) fn balance_from_account_balance(
     account_update_time_ms: i64,
     operation: &'static str,
 ) -> Result<Balance> {
-    let available = common::parse_decimal(
+    let available = rust_decimal::Decimal::from_str(
         balance
             .free
             .ok_or_else(|| crate::error::missing_field(operation, "free"))?
             .as_str(),
     )
     .map_err(|err| crate::error::invalid_field(operation, "free", err.to_string()))?;
-    let locked = common::parse_decimal(
+    let locked = rust_decimal::Decimal::from_str(
         balance
             .locked
             .ok_or_else(|| crate::error::missing_field(operation, "locked"))?

@@ -1199,7 +1199,6 @@ name = "mkt-exchange-common"
 version = "0.2.0"
 dependencies = [
  "hmac",
- "rust_decimal",
  "serde_json",
  "sha2",
  "time",

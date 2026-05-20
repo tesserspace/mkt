@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use mkt_core::{Error, ExposeSecret, Result};
@@ -225,7 +226,9 @@ pub(crate) fn base_websocket_url(url: Option<&str>) -> std::result::Result<Url, 
     common::parse_base_url(url.unwrap_or("wss://wbs-api.mexc.com/ws"), false)
 }
 
-pub(crate) use common::query_pair;
+pub(crate) fn query_pair(key: &'static str, value: impl Display) -> (&'static str, String) {
+    (key, value.to_string())
+}
 
 #[cfg(test)]
 mod tests {
