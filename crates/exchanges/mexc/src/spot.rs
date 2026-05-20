@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use mkt_core::{Account, Error, Result, SpotTrading};
+use mkt_exchange_common as common;
 use mkt_types::{
     Balance, ExchangeId, Fill, KnownExchange, Order, OrderKey, SpotCancelOrderRequest,
     SpotOrderQuery, SpotOrderRequest, Symbol,
@@ -261,15 +262,8 @@ fn trade_matches_order_id_filter(
     trade
         .order_id
         .as_ref()
-        .map(value_to_string)
+        .map(common::value_to_string)
         .is_some_and(|order_id| order_id == expected)
-}
-
-fn value_to_string(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(value) => value.clone(),
-        other => other.to_string(),
-    }
 }
 
 #[cfg(test)]

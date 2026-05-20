@@ -1,18 +1,13 @@
-use std::fmt::Display;
 use std::sync::Arc;
 
-use hmac::{Hmac, Mac};
 use mkt_core::{Error, ExposeSecret, Result};
+use mkt_exchange_common as common;
 use reqwest::{header::RETRY_AFTER, Method, Response};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use sha2::Sha256;
-use time::OffsetDateTime;
 use url::Url;
 
 use crate::{error, MexcInner};
-
-type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
 pub(crate) struct MexcRestClient {
@@ -91,7 +86,10 @@ impl MexcRestClient {
         query: Vec<(&'static str, String)>,
         signed: bool,
     ) -> std::result::Result<reqwest::RequestBuilder, String> {
-        let timestamp = signed.then(unix_timestamp_millis).transpose()?;
+        let timestamp = signed
+            .then(|| common::unix_timestamp_millis(time::OffsetDateTime::now_utc()))
+            .transpose()
+            .map_err(|err| err.to_string())?;
         self.request_with_timestamp(method, path, query, timestamp)
     }
 
@@ -149,11 +147,7 @@ impl MexcRestClient {
             .credentials
             .as_ref()
             .ok_or_else(|| "missing credentials".to_owned())?;
-        let mut mac = HmacSha256::new_from_slice(credentials.secret().expose_secret().as_bytes())
-            .map_err(|err| err.to_string())?;
-        mac.update(payload.as_bytes());
-        let signature = mac.finalize().into_bytes();
-        Ok(hex_lower(signature.as_slice()))
+        common::hmac_sha256_hex(credentials.secret().expose_secret().as_bytes(), payload)
     }
 
     fn invalid_config_error(&self, config_key: &'static str, message: String) -> Error {
@@ -231,36 +225,15 @@ fn serialize_query(query: &[(&'static str, String)]) -> std::result::Result<Stri
     Ok(serializer.finish())
 }
 
-fn unix_timestamp_millis() -> std::result::Result<i64, String> {
-    i64::try_from(OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000)
-        .map_err(|_| "timestamp is out of i64 millisecond range".to_owned())
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(&mut result, "{byte:02x}");
-    }
-    result
-}
-
 pub(crate) fn base_rest_url(url: Option<&str>) -> std::result::Result<Url, String> {
-    let raw = url.unwrap_or("https://api.mexc.com");
-    let mut parsed = Url::parse(raw).map_err(|err| err.to_string())?;
-    if !parsed.path().ends_with('/') {
-        parsed.set_path(&format!("{}/", parsed.path()));
-    }
-    Ok(parsed)
+    common::parse_base_url(url.unwrap_or("https://api.mexc.com"), true)
 }
 
 pub(crate) fn base_websocket_url(url: Option<&str>) -> std::result::Result<Url, String> {
-    Url::parse(url.unwrap_or("wss://wbs-api.mexc.com/ws")).map_err(|err| err.to_string())
+    common::parse_base_url(url.unwrap_or("wss://wbs-api.mexc.com/ws"), false)
 }
 
-pub(crate) fn query_pair(key: &'static str, value: impl Display) -> (&'static str, String) {
-    (key, value.to_string())
-}
+pub(crate) use common::query_pair;
 
 #[cfg(test)]
 mod tests {

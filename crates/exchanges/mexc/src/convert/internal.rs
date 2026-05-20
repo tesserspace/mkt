@@ -1,6 +1,5 @@
-use std::str::FromStr;
-
 use mkt_core::Result;
+use mkt_exchange_common as common;
 use mkt_types::{KlineInterval, MarketKind, Symbol};
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
@@ -10,7 +9,7 @@ pub(super) fn parse_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Decimal> {
-    Decimal::from_str(raw.as_str())
+    common::parse_decimal(raw.as_str())
         .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
@@ -31,8 +30,8 @@ pub(super) fn parse_optional_decimal(
     operation: &'static str,
     field: &'static str,
 ) -> Result<Option<Decimal>> {
-    raw.map(|value| parse_decimal(value, operation, field))
-        .transpose()
+    common::parse_optional_decimal(raw)
+        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
 pub(super) fn parse_required_i64(
@@ -61,9 +60,8 @@ pub(crate) fn unix_timestamp_millis(
     operation: &'static str,
     field: &'static str,
 ) -> Result<i64> {
-    let timestamp_millis = timestamp.unix_timestamp_nanos() / 1_000_000;
-    i64::try_from(timestamp_millis)
-        .map_err(|_| crate::error::invalid_field(operation, field, "timestamp out of i64 range"))
+    common::unix_timestamp_millis(timestamp)
+        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
 pub(super) fn parse_unix_millis_timestamp(
@@ -71,17 +69,8 @@ pub(super) fn parse_unix_millis_timestamp(
     operation: &'static str,
     field: &'static str,
 ) -> Result<OffsetDateTime> {
-    if timestamp_millis < 0 {
-        return Err(crate::error::invalid_field(
-            operation,
-            field,
-            "invalid Unix millisecond timestamp",
-        ));
-    }
-
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(timestamp_millis) * 1_000_000).map_err(
-        |_| crate::error::invalid_field(operation, field, "invalid Unix millisecond timestamp"),
-    )
+    common::parse_unix_millis_timestamp(timestamp_millis)
+        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
 pub(super) fn parse_value_decimal(
@@ -116,14 +105,11 @@ pub(super) fn parse_value_timestamp(
 }
 
 pub(super) fn value_to_string(value: serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(value) => value,
-        other => other.to_string(),
-    }
+    common::value_to_string(&value)
 }
 
 pub(super) fn closed_from_close_time(close_time: OffsetDateTime) -> bool {
-    close_time < OffsetDateTime::now_utc()
+    common::closed_from_close_time(close_time)
 }
 
 pub(crate) fn require_spot_symbol(symbol: &Symbol, operation: &'static str) -> Result<String> {

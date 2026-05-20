@@ -14,15 +14,14 @@ keywords = ["crypto", "exchange", "trading", "mexc"]
 [dependencies]
 async-trait.workspace = true
 futures-util = "=0.3.31"
-hmac = "=0.12.1"
-prost = "=0.13.5"
 mkt-core.workspace = true
+mkt-exchange-common.workspace = true
 mkt-types.workspace = true
+prost = "=0.13.5"
 reqwest.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "=0.10.9"
 time.workspace = true
 tokio.workspace = true
 tokio-tungstenite = { workspace = true, features = ["connect"] }

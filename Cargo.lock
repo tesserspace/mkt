@@ -1165,6 +1165,7 @@ dependencies = [
  "async-trait",
  "binance-sdk",
  "mkt-core",
+ "mkt-exchange-common",
  "mkt-types",
  "rust_decimal",
  "serde_json",
@@ -1194,20 +1195,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "mkt-exchange-common"
+version = "0.2.0"
+dependencies = [
+ "hmac",
+ "rust_decimal",
+ "serde_json",
+ "sha2",
+ "time",
+ "url",
+]
+
+[[package]]
 name = "mkt-exchange-mexc"
 version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures-util",
- "hmac",
  "mkt-core",
+ "mkt-exchange-common",
  "mkt-types",
  "prost",
  "reqwest",
  "rust_decimal",
  "serde",
  "serde_json",
- "sha2",
  "time",
  "tokio",
  "tokio-tungstenite",
