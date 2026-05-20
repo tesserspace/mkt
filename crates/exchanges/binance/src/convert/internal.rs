@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use binance_sdk::spot::rest_api::{NewOrderSideEnum, NewOrderTimeInForceEnum, NewOrderTypeEnum};
 use mkt_core::Result;
+use mkt_exchange_common as common;
 use mkt_types::{
     Extensions, OrderQuantity, OrderSide, OrderStatus, OrderType, SpotOrderRequest, TimeInForce,
 };
@@ -212,17 +213,8 @@ pub(super) fn parse_unix_millis_timestamp(
     operation: &'static str,
     field: &'static str,
 ) -> Result<OffsetDateTime> {
-    if timestamp_millis < 0 {
-        return Err(crate::error::invalid_field(
-            operation,
-            field,
-            "invalid Unix millisecond timestamp",
-        ));
-    }
-
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(timestamp_millis) * 1_000_000).map_err(
-        |_| crate::error::invalid_field(operation, field, "invalid Unix millisecond timestamp"),
-    )
+    common::parse_unix_millis_timestamp(timestamp_millis)
+        .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
 }
 
 pub(super) fn insert_order_extensions(

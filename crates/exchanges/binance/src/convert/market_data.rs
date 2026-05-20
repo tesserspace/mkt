@@ -423,11 +423,10 @@ pub(crate) fn klines_from_rows(
                             crate::error::invalid_field(operation, field, err.to_string())
                         })
                     }
-                    Some(KlinesItemInner::Integer(raw)) => {
-                        Decimal::from_str(raw.to_string().as_str()).map_err(|err| {
+                    Some(KlinesItemInner::Integer(raw)) => Decimal::from_str(&raw.to_string())
+                        .map_err(|err| {
                             crate::error::invalid_field(operation, field, err.to_string())
-                        })
-                    }
+                        }),
                     Some(other) => Err(crate::error::invalid_field(
                         operation,
                         field,

@@ -3,6 +3,7 @@ members = [
     "crates/mkt",
     "crates/mkt-core",
     "crates/mkt-types",
+    "crates/exchanges/common",
     "crates/exchanges/binance",
     "crates/exchanges/bitget",
     "crates/exchanges/bybit",
@@ -23,10 +24,12 @@ anyhow = "=1.0.102"
 async-trait = "=0.1.89"
 binance-sdk = { version = "=49.0.0", default-features = false, features = ["rustls-tls", "spot", "derivatives_trading_usds_futures"] }
 derive_builder = "=0.10.2"
+hmac = "=0.12.1"
 mkt-core = { path = "crates/mkt-core", version = "0.2.0" }
 mkt-exchange-binance = { path = "crates/exchanges/binance", version = "0.2.0" }
 mkt-exchange-bitget = { path = "crates/exchanges/bitget", version = "0.2.0" }
 mkt-exchange-bybit = { path = "crates/exchanges/bybit", version = "0.2.0" }
+mkt-exchange-common = { path = "crates/exchanges/common", version = "0.2.0" }
 mkt-exchange-mexc = { path = "crates/exchanges/mexc", version = "0.2.0" }
 mkt-exchange-okx = { path = "crates/exchanges/okx", version = "0.2.0" }
 mkt-types = { path = "crates/mkt-types", version = "0.2.0" }
@@ -35,6 +38,7 @@ rust_decimal = { version = "=1.42.0", default-features = false }
 secrecy = { version = "=0.10.3" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.149" }
+sha2 = "=0.10.9"
 time = { version = "=0.3.45", default-features = false, features = ["std", "serde"] }
 strum = "=0.28.0"
 strum_macros = "=0.28.0"
