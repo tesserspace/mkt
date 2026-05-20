@@ -18,6 +18,6 @@ MKT_MEXC_MAINNET_SMOKE=1 \
 cargo test -p mkt-exchange-mexc --test mainnet_smoke -- --ignored --nocapture
 ```
 
-The order flow spends at most `0.25 USDT`, applies a balance safety factor, and
+The order flow spends at most `1.10 USDT`, applies a balance safety factor, and
 skips live orders when the available balance is below the venue-reported minimum
 notional. The API key must have MEXC spot account and trading permissions.

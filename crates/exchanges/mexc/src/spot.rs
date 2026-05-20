@@ -130,11 +130,8 @@ impl SpotTrading for MexcSpotTrading {
 
         let symbol = query.symbol;
         let symbol_name = convert::require_spot_symbol(&symbol, SPOT_FILLS_OPERATION)?;
-        let order_id = match query.key {
-            OrderKey::Exchange(order_id) => Some(convert::parse_exchange_order_id(
-                &order_id.0,
-                SPOT_FILLS_OPERATION,
-            )?),
+        let (order_id, order_id_filter) = match query.key {
+            OrderKey::Exchange(order_id) => fill_order_id_lookup(&order_id.0),
             OrderKey::Client(client_order_id) => {
                 let order = self
                     .spot_order(SpotOrderQuery::new(
@@ -142,10 +139,7 @@ impl SpotTrading for MexcSpotTrading {
                         OrderKey::Client(client_order_id),
                     ))
                     .await?;
-                Some(convert::parse_exchange_order_id(
-                    &order.id.0,
-                    SPOT_FILLS_OPERATION,
-                )?)
+                fill_order_id_lookup(&order.id.0)
             }
             _ => {
                 return Err(error::invalid_field(
@@ -166,6 +160,7 @@ impl SpotTrading for MexcSpotTrading {
 
         response
             .into_iter()
+            .filter(|trade| trade_matches_order_id_filter(trade, order_id_filter.as_deref()))
             .map(|trade| convert::fill_from_trade(&symbol, trade, SPOT_FILLS_OPERATION))
             .collect()
     }
@@ -228,11 +223,18 @@ fn order_key_from_place_response(
     operation: &'static str,
 ) -> Result<OrderKey> {
     if let Some(order_id) = response.order_id {
-        return Ok(OrderKey::Exchange(mkt_types::OrderId::new(
-            serde_json::Value::to_string(&order_id)
-                .trim_matches('"')
-                .to_owned(),
-        )));
+        let order_id = serde_json::Value::to_string(&order_id)
+            .trim_matches('"')
+            .to_owned();
+        if convert::parse_exchange_order_id(&order_id, operation).is_ok() {
+            return Ok(OrderKey::Exchange(mkt_types::OrderId::new(order_id)));
+        }
+        if let Some(client_order_id) = response.client_order_id {
+            return Ok(OrderKey::Client(mkt_types::ClientOrderId::new(
+                client_order_id,
+            )));
+        }
+        return Ok(OrderKey::Exchange(mkt_types::OrderId::new(order_id)));
     }
     if let Some(client_order_id) = response.client_order_id {
         return Ok(OrderKey::Client(mkt_types::ClientOrderId::new(
@@ -242,6 +244,34 @@ fn order_key_from_place_response(
     Err(error::missing_field(operation, "orderId/clientOrderId"))
 }
 
+fn fill_order_id_lookup(raw: &str) -> (Option<i64>, Option<String>) {
+    match convert::parse_exchange_order_id(raw, SPOT_FILLS_OPERATION) {
+        Ok(order_id) => (Some(order_id), None),
+        Err(_) => (None, Some(raw.to_owned())),
+    }
+}
+
+fn trade_matches_order_id_filter(
+    trade: &convert::MyTradeResponse,
+    order_id_filter: Option<&str>,
+) -> bool {
+    let Some(expected) = order_id_filter else {
+        return true;
+    };
+    trade
+        .order_id
+        .as_ref()
+        .map(value_to_string)
+        .is_some_and(|order_id| order_id == expected)
+}
+
+fn value_to_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(value) => value.clone(),
+        other => other.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use mkt_types::{
@@ -249,7 +279,7 @@ mod tests {
     };
     use rust_decimal::Decimal;
 
-    use super::order_key_from_place_response;
+    use super::{fill_order_id_lookup, order_key_from_place_response};
 
     #[test]
     fn place_order_builds_signed_query_without_network() {
@@ -274,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn place_response_preserves_string_order_id_in_order_key() {
+    fn place_response_uses_client_key_when_string_order_id_cannot_be_queried() {
         let response: crate::convert::NewOrderResponse =
             serde_json::from_value(serde_json::json!({
                 "orderId": "abc-123",
@@ -283,7 +313,22 @@ mod tests {
             .expect("string orderId fixture should deserialize");
 
         let key = order_key_from_place_response(response, "spot.place_order")
-            .expect("string orderId should map to exchange order key");
+            .expect("client key should be used when MEXC orderId is not query-compatible");
+        assert!(
+            matches!(key, OrderKey::Client(client_order_id) if client_order_id.0 == "client-1")
+        );
+    }
+
+    #[test]
+    fn place_response_preserves_string_order_id_without_client_fallback() {
+        let response: crate::convert::NewOrderResponse =
+            serde_json::from_value(serde_json::json!({
+                "orderId": "abc-123"
+            }))
+            .expect("string orderId fixture should deserialize");
+
+        let key = order_key_from_place_response(response, "spot.place_order")
+            .expect("string orderId without client id should map to exchange order key");
         assert!(matches!(key, OrderKey::Exchange(order_id) if order_id.0 == "abc-123"));
     }
 
@@ -299,6 +344,15 @@ mod tests {
         let key = order_key_from_place_response(response, "spot.place_order")
             .expect("numeric orderId should map to exchange order key");
         assert!(matches!(key, OrderKey::Exchange(order_id) if order_id.0 == "42"));
+    }
+
+    #[test]
+    fn fill_lookup_filters_locally_for_non_numeric_mexc_order_ids() {
+        assert_eq!(fill_order_id_lookup("42"), (Some(42), None));
+        assert_eq!(
+            fill_order_id_lookup("C02__685820380593467393042"),
+            (None, Some("C02__685820380593467393042".to_owned()))
+        );
     }
 
     #[test]

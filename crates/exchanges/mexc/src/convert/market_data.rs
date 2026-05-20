@@ -5,6 +5,7 @@ use mkt_types::{
     OrderType, PriceFilter, QuantityModeSupport, Symbol, Trade, TradeSide, TradingConstraints,
     TradingPermissions,
 };
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use super::internal;
@@ -25,6 +26,9 @@ pub(crate) struct ExchangeInfoSymbolResponse {
     base_asset_precision: Option<i64>,
     quote_precision: Option<serde_json::Value>,
     quote_asset_precision: Option<i64>,
+    base_size_precision: Option<String>,
+    quote_amount_precision: Option<String>,
+    quote_amount_precision_market: Option<String>,
     order_types: Option<Vec<String>>,
     is_spot_trading_allowed: Option<bool>,
     quote_order_qty_market_allowed: Option<bool>,
@@ -184,8 +188,37 @@ fn market_info_from_response(
         }
     }
 
-    let (price_filter, lot_size, market_lot_size, min_notional, apply_min_to_market) =
-        filter_constraints(market.filters.unwrap_or_default(), operation)?;
+    let (
+        price_filter,
+        mut lot_size,
+        mut market_lot_size,
+        mut min_notional,
+        mut apply_min_to_market,
+    ) = filter_constraints(market.filters.unwrap_or_default(), operation)?;
+    let base_size_precision =
+        positive_decimal(market.base_size_precision, operation, "baseSizePrecision")?;
+    if lot_size.is_none() {
+        lot_size = base_size_precision
+            .map(|value| lot_size_from_base_size_precision(value, operation))
+            .transpose()?;
+    }
+    if market_lot_size.is_none() {
+        market_lot_size = base_size_precision
+            .map(|value| lot_size_from_base_size_precision(value, operation))
+            .transpose()?;
+    }
+    if min_notional.is_none() {
+        min_notional = positive_decimal(
+            market
+                .quote_amount_precision_market
+                .or(market.quote_amount_precision),
+            operation,
+            "quoteAmountPrecision",
+        )?;
+        if min_notional.is_some() && apply_min_to_market.is_none() {
+            apply_min_to_market = Some(true);
+        }
+    }
     let quantity_mode_support = quantity_mode_support(
         &supported_order_types,
         market.quote_order_qty_market_allowed,
@@ -372,6 +405,29 @@ fn lot_size_filter(
         )?)
         .build()
         .map_err(|err| crate::error::invalid_field(operation, field, err.to_string()))
+}
+
+fn lot_size_from_base_size_precision(
+    base_size_precision: Decimal,
+    operation: &'static str,
+) -> Result<LotSizeFilter> {
+    LotSizeFilter::builder()
+        .min_quantity(Some(base_size_precision))
+        .step_size(Some(base_size_precision))
+        .build()
+        .map_err(|err| crate::error::invalid_field(operation, "baseSizePrecision", err.to_string()))
+}
+
+fn positive_decimal(
+    raw: Option<String>,
+    operation: &'static str,
+    field: &'static str,
+) -> Result<Option<Decimal>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let value = internal::parse_decimal(raw, operation, field)?;
+    Ok((value > Decimal::ZERO).then_some(value))
 }
 
 fn quantity_mode_support(

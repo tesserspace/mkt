@@ -40,25 +40,24 @@ async fn mexc_mainnet_usdcusdt_smoke() {
 
     let symbol = Symbol::spot(SMOKE_SYMBOL);
     let market = smoke_market(&handle, &symbol).await;
-    smoke_public_rest(&handle, &symbol, &market).await;
+    let last_price = smoke_public_rest(&handle, &symbol, &market).await;
     smoke_public_stream(&handle, &symbol).await;
 
     let balances_before = balances(&handle).await;
     let quote_before = available_balance(&balances_before, QUOTE_ASSET);
     let base_before = available_balance(&balances_before, BASE_ASSET);
-    let quote_to_spend = planned_quote_spend(quote_before, &market);
-    if quote_to_spend <= Decimal::ZERO {
+    let Some(buy_quantity) = planned_buy_quantity(quote_before, &market, last_price.price) else {
         eprintln!(
-            "skipping MEXC live order flow: available {QUOTE_ASSET} {quote_before} is below {SMOKE_SYMBOL} minimum notional"
+            "skipping MEXC live order flow: available {QUOTE_ASSET} {quote_before} cannot satisfy {SMOKE_SYMBOL} order constraints"
         );
         return;
-    }
+    };
 
-    let buy = place_market_buy(&handle, &symbol, quote_to_spend).await;
+    let buy = place_market_buy(&handle, &symbol, buy_quantity).await;
     assert_terminal_or_open(&buy);
-    let queried_buy = spot_order(&handle, symbol.clone(), OrderKey::Exchange(buy.id.clone())).await;
+    let queried_buy = spot_order(&handle, symbol.clone(), order_query_key(&buy)).await;
     assert_eq!(queried_buy.symbol, symbol);
-    let buy_fills = spot_fills(&handle, symbol.clone(), OrderKey::Exchange(buy.id.clone())).await;
+    let buy_fills = spot_fills(&handle, symbol.clone(), order_query_key(&buy)).await;
     assert!(
         !buy_fills.is_empty(),
         "MEXC market buy should produce at least one fill"
@@ -74,10 +73,9 @@ async fn mexc_mainnet_usdcusdt_smoke() {
 
     let sell = place_market_sell(&handle, &symbol, sell_quantity).await;
     assert_terminal_or_open(&sell);
-    let queried_sell =
-        spot_order(&handle, symbol.clone(), OrderKey::Exchange(sell.id.clone())).await;
+    let queried_sell = spot_order(&handle, symbol.clone(), order_query_key(&sell)).await;
     assert_eq!(queried_sell.symbol, symbol);
-    let sell_fills = spot_fills(&handle, symbol.clone(), OrderKey::Exchange(sell.id.clone())).await;
+    let sell_fills = spot_fills(&handle, symbol.clone(), order_query_key(&sell)).await;
     assert!(
         !sell_fills.is_empty(),
         "MEXC market sell should produce at least one fill"
@@ -104,7 +102,7 @@ async fn smoke_public_rest(
     handle: &mkt_core::ExchangeHandle,
     symbol: &Symbol,
     market: &MarketInfo,
-) {
+) -> LastPrice {
     let market_data = handle
         .market_data()
         .expect("MEXC handle should bind market data capability");
@@ -176,6 +174,8 @@ async fn smoke_public_rest(
     .await
     .unwrap_or_else(|err| panic!("MEXC klines request should succeed: {err}"));
     assert!(!klines.is_empty(), "klines should not be empty");
+
+    last_price
 }
 
 async fn smoke_public_stream(handle: &mkt_core::ExchangeHandle, symbol: &Symbol) {
@@ -295,7 +295,7 @@ async fn balances(handle: &mkt_core::ExchangeHandle) -> Vec<Balance> {
 async fn place_market_buy(
     handle: &mkt_core::ExchangeHandle,
     symbol: &Symbol,
-    quote_quantity: Decimal,
+    quantity: OrderQuantity,
 ) -> Order {
     with_rest_timeout(
         "MEXC market buy request should finish within timeout",
@@ -307,7 +307,7 @@ async fn place_market_buy(
                     .symbol(symbol.clone())
                     .side(OrderSide::Buy)
                     .order_type(OrderType::Market)
-                    .quantity(OrderQuantity::Quote(quote_quantity))
+                    .quantity(quantity)
                     .client_order_id(Some(client_order_id("buy")))
                     .build()
                     .expect("smoke market buy request should build"),
@@ -379,15 +379,28 @@ where
         .unwrap_or_else(|_| panic!("{message}"))
 }
 
-fn planned_quote_spend(available_quote: Decimal, market: &MarketInfo) -> Decimal {
+fn planned_buy_quantity(
+    available_quote: Decimal,
+    market: &MarketInfo,
+    last_price: Decimal,
+) -> Option<OrderQuantity> {
+    let quote_to_spend = planned_quote_spend(available_quote, market)?;
     if !market.trading_permissions.supports_quantity_mode(
         MarketQuantityMode::Quote,
         OrderType::Market,
         OrderSide::Buy,
     ) {
-        return Decimal::ZERO;
+        return planned_base_buy_quantity(quote_to_spend, last_price, market)
+            .map(OrderQuantity::Base);
     }
 
+    Some(OrderQuantity::Quote(truncate_to_quote_precision(
+        quote_to_spend,
+        market,
+    )))
+}
+
+fn planned_quote_spend(available_quote: Decimal, market: &MarketInfo) -> Option<Decimal> {
     let affordable = (available_quote * balance_safety_factor()).min(max_quote_to_spend());
     let min_notional = market
         .trading_constraints
@@ -396,10 +409,38 @@ fn planned_quote_spend(available_quote: Decimal, market: &MarketInfo) -> Decimal
         .and_then(|constraints| constraints.min_notional)
         .unwrap_or_else(default_min_notional);
     if affordable < min_notional {
-        return Decimal::ZERO;
+        return None;
     }
 
-    truncate_to_quote_precision(affordable, market)
+    Some(affordable)
+}
+
+fn planned_base_buy_quantity(
+    quote_to_spend: Decimal,
+    last_price: Decimal,
+    market: &MarketInfo,
+) -> Option<Decimal> {
+    if last_price <= Decimal::ZERO {
+        return None;
+    }
+
+    let lot_size = market
+        .trading_constraints
+        .market_lot_size
+        .as_ref()
+        .or(market.trading_constraints.lot_size.as_ref());
+    let mut quantity = quote_to_spend / last_price;
+    if let Some(step) = lot_size.and_then(|lot_size| lot_size.step_size) {
+        quantity = floor_to_step(quantity, step);
+    }
+    if let Some(min_quantity) = lot_size.and_then(|lot_size| lot_size.min_quantity) {
+        quantity = quantity.max(min_quantity);
+    }
+    if quantity <= Decimal::ZERO || quantity * last_price > quote_to_spend {
+        return None;
+    }
+
+    Some(quantity)
 }
 
 fn planned_sell_quantity(
@@ -414,16 +455,18 @@ fn planned_sell_quantity(
 
     let quantity = market
         .trading_constraints
-        .lot_size
+        .market_lot_size
         .as_ref()
+        .or(market.trading_constraints.lot_size.as_ref())
         .and_then(|lot_size| lot_size.step_size)
         .map(|step| floor_to_step(acquired, step))
         .unwrap_or(acquired);
 
     let min_quantity = market
         .trading_constraints
-        .lot_size
+        .market_lot_size
         .as_ref()
+        .or(market.trading_constraints.lot_size.as_ref())
         .and_then(|lot_size| lot_size.min_quantity)
         .unwrap_or(Decimal::ZERO);
     if quantity < min_quantity {
@@ -441,7 +484,7 @@ fn floor_to_step(quantity: Decimal, step: Decimal) -> Decimal {
 }
 
 fn max_quote_to_spend() -> Decimal {
-    Decimal::new(25, 2)
+    Decimal::new(110, 2)
 }
 
 fn balance_safety_factor() -> Decimal {
@@ -490,6 +533,14 @@ fn assert_terminal_or_open(order: &Order) {
         "unexpected MEXC order status: {:?}",
         order.status
     );
+}
+
+fn order_query_key(order: &Order) -> OrderKey {
+    order
+        .client_order_id
+        .clone()
+        .map(OrderKey::Client)
+        .unwrap_or_else(|| OrderKey::Exchange(order.id.clone()))
 }
 
 fn mainnet_handle() -> Option<mkt_core::ExchangeHandle> {

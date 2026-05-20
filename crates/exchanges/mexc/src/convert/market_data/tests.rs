@@ -29,6 +29,27 @@ fn exchange_info_precision_mapping_uses_true_precision_fields_only() {
     assert_eq!(market.base_asset_precision, Some(6));
     assert_eq!(market.quote_asset_precision, Some(8));
     assert_eq!(market.quote_precision, Some(2));
+    let lot_size = market
+        .trading_constraints
+        .lot_size
+        .expect("baseSizePrecision should provide a lot size fallback");
+    assert_eq!(
+        lot_size.min_quantity,
+        Some(Decimal::from_str("0.0001").expect("decimal fixture should parse"))
+    );
+    assert_eq!(
+        lot_size.step_size,
+        Some(Decimal::from_str("0.0001").expect("decimal fixture should parse"))
+    );
+    let notional = market
+        .trading_constraints
+        .notional
+        .expect("quoteAmountPrecision should provide a notional fallback");
+    assert_eq!(
+        notional.min_notional,
+        Some(Decimal::from_str("5").expect("decimal fixture should parse"))
+    );
+    assert_eq!(notional.apply_min_to_market, Some(true));
 }
 
 #[test]
