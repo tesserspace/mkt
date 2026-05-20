@@ -11,6 +11,7 @@ use mkt_types::{
     ClientOrderId, Extensions, MarketKind, Order, OrderId, OrderStatus, OrderType, Symbol,
     TimeInForce,
 };
+use time::OffsetDateTime;
 
 #[non_exhaustive]
 #[derive(Debug, Default)]
@@ -238,7 +239,7 @@ pub(crate) fn order_from_snapshot(
 
     let quantity = parse_required_decimal(snapshot.orig_qty, operation, "origQty")?;
     let filled_quantity = parse_required_decimal(snapshot.executed_qty, operation, "executedQty")?;
-    let created_at = parse_required_unix_millis_timestamp(
+    let created_at = parse_unix_millis_timestamp_or_now(
         snapshot.time.or(snapshot.update_time),
         operation,
         "time",
@@ -409,16 +410,14 @@ fn parse_required_decimal(
     super::internal::parse_required_decimal(raw, operation, field)
 }
 
-fn parse_required_unix_millis_timestamp(
+fn parse_unix_millis_timestamp_or_now(
     raw: Option<i64>,
     operation: &'static str,
     field: &'static str,
 ) -> Result<time::OffsetDateTime> {
-    super::internal::parse_unix_millis_timestamp(
-        raw.ok_or_else(|| error::missing_field(operation, field))?,
-        operation,
-        field,
-    )
+    raw.map(|value| super::internal::parse_unix_millis_timestamp(value, operation, field))
+        .transpose()
+        .map(|timestamp| timestamp.unwrap_or_else(OffsetDateTime::now_utc))
 }
 
 fn parse_optional_unix_millis_timestamp(
@@ -534,6 +533,30 @@ mod tests {
         let order = order_from_snapshot(response.into(), OPERATION)
             .expect("delete snapshot should map to Order");
         assert_eq!(order.id.0, "9007199254740993");
+    }
+
+    #[test]
+    fn cancel_response_without_time_uses_client_receive_time() {
+        let response: DeleteOrderResponse = serde_json::from_value(json!({
+            "symbol": "BTCUSDT",
+            "orderId": "C02__123",
+            "clientOrderId": "client-1",
+            "price": "43000.50",
+            "origQty": "1.25",
+            "executedQty": "0",
+            "cummulativeQuoteQty": "0",
+            "status": "CANCELED",
+            "timeInForce": "GTC",
+            "type": "LIMIT",
+            "side": "SELL",
+            "isWorking": false
+        }))
+        .expect("MEXC cancel fixture should deserialize without time");
+
+        let order = order_from_snapshot(response.into(), OPERATION)
+            .expect("cancel snapshot without time should map to Order");
+        assert_eq!(order.id.0, "C02__123");
+        assert_eq!(order.status, OrderStatus::Canceled);
     }
 
     #[test]

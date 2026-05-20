@@ -12,11 +12,17 @@ use mkt_types::{
 use rust_decimal::{Decimal, RoundingStrategy};
 use tokio::time::timeout;
 
+mod mainnet_supplemental_support;
+use mainnet_supplemental_support::{
+    cancel_spot_order, open_spot_orders, place_limit_sell, smoke_public_stream_event_set,
+};
+
 const MEXC_MAINNET_API_KEY: &str = "MEXC_MAINNET_API_KEY";
 const MEXC_MAINNET_SECRET_KEY: &str = "MEXC_MAINNET_SECRET_KEY";
 const MKT_MEXC_MAINNET_SMOKE: &str = "MKT_MEXC_MAINNET_SMOKE";
 const MKT_SMOKE_TESTS_REQUIRED: &str = "MKT_SMOKE_TESTS_REQUIRED";
 const SMOKE_SYMBOL: &str = "USDCUSDT";
+const STREAM_COVERAGE_SYMBOL: &str = "BTCUSDT";
 const BASE_ASSET: &str = "USDC";
 const QUOTE_ASSET: &str = "USDT";
 const REST_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
@@ -96,6 +102,89 @@ async fn mexc_mainnet_usdcusdt_smoke() {
             .any(|order| { (order.id == buy.id || order.id == sell.id) && order.status.is_open() }),
         "smoke test market orders should not remain open"
     );
+}
+
+#[tokio::test]
+#[ignore = "places real MEXC mainnet spot orders; run explicitly with MKT_MEXC_MAINNET_SMOKE=1"]
+async fn mexc_mainnet_usdcusdt_supplemental_smoke() {
+    let Some(handle) = mainnet_handle() else {
+        handle_missing_credentials();
+        return;
+    };
+    if !mainnet_smoke_enabled() {
+        eprintln!(
+            "skipping MEXC supplemental smoke test: set {MKT_MEXC_MAINNET_SMOKE}=1 to allow live orders"
+        );
+        return;
+    }
+
+    let symbol = Symbol::spot(SMOKE_SYMBOL);
+    let market = smoke_market(&handle, &symbol).await;
+    let last_price = with_rest_timeout(
+        "MEXC last price request should finish within timeout",
+        handle
+            .market_data()
+            .expect("MEXC handle should bind market data capability")
+            .last_price(&symbol),
+    )
+    .await
+    .unwrap_or_else(|err| panic!("MEXC last price request should succeed: {err}"));
+    let all_prices = with_rest_timeout(
+        "MEXC all last prices request should finish within timeout",
+        handle
+            .market_data()
+            .expect("MEXC handle should bind market data capability")
+            .last_prices(None),
+    )
+    .await
+    .unwrap_or_else(|err| panic!("MEXC all last prices request should succeed: {err}"));
+    assert!(all_prices.iter().any(|price| price.symbol == symbol));
+    smoke_public_stream_event_set(&handle, &Symbol::spot(STREAM_COVERAGE_SYMBOL)).await;
+
+    let before = balances(&handle).await;
+    let quote_before = available_balance(&before, QUOTE_ASSET);
+    let base_before = available_balance(&before, BASE_ASSET);
+    let Some(buy_quantity) = planned_buy_quantity(quote_before, &market, last_price.price) else {
+        eprintln!("skipping MEXC supplemental order flow: available {QUOTE_ASSET} {quote_before}");
+        return;
+    };
+    let buy = place_market_buy(&handle, &symbol, buy_quantity).await;
+    assert!(!spot_fills(&handle, symbol.clone(), order_query_key(&buy))
+        .await
+        .is_empty());
+
+    let acquired = planned_sell_quantity(
+        base_before,
+        available_balance(&balances(&handle).await, BASE_ASSET),
+        &market,
+    );
+    assert!(acquired > Decimal::ZERO, "should acquire {BASE_ASSET}");
+    let limit_sell = place_limit_sell(
+        &handle,
+        &symbol,
+        acquired,
+        limit_sell_price(last_price.price, &market),
+    )
+    .await;
+    let open_orders = open_spot_orders(&handle, &symbol).await;
+    assert!(open_orders.iter().any(|order| order.id == limit_sell.id));
+    let queried = spot_order(&handle, symbol.clone(), order_query_key(&limit_sell)).await;
+    assert!(queried.status.is_open(), "limit sell should remain open");
+    let _ = cancel_spot_order(&handle, &symbol, order_query_key(&limit_sell)).await;
+    assert!(!open_spot_orders(&handle, &symbol)
+        .await
+        .iter()
+        .any(|order| order.id == limit_sell.id));
+
+    let cleanup_quantity = planned_sell_quantity(
+        base_before,
+        available_balance(&balances(&handle).await, BASE_ASSET),
+        &market,
+    );
+    if cleanup_quantity > Decimal::ZERO {
+        let cleanup = place_market_sell(&handle, &symbol, cleanup_quantity).await;
+        assert_terminal_or_open(&cleanup);
+    }
 }
 
 async fn smoke_public_rest(
@@ -190,13 +279,6 @@ async fn smoke_public_stream(handle: &mkt_core::ExchangeHandle, symbol: &Symbol)
                 Subscription::AggTrades(symbol.clone()),
                 Subscription::BookTicker(symbol.clone()),
                 Subscription::MiniTicker(symbol.clone()),
-                Subscription::Klines(
-                    KlineRequest::builder()
-                        .symbol(symbol.clone())
-                        .interval(KlineInterval::M1)
-                        .build()
-                        .expect("smoke stream kline request should build"),
-                ),
                 Subscription::OrderBook {
                     symbol: symbol.clone(),
                     depth: Some(5),
@@ -503,6 +585,11 @@ fn truncate_to_quote_precision(quantity: Decimal, market: &MarketInfo) -> Decima
         return quantity;
     };
     quantity.round_dp_with_strategy(scale, RoundingStrategy::ToZero)
+}
+
+fn limit_sell_price(last_price: Decimal, market: &MarketInfo) -> Decimal {
+    let price = last_price * Decimal::new(102, 2);
+    truncate_to_quote_precision(price, market)
 }
 
 fn available_balance(balances: &[Balance], asset: &str) -> Decimal {
