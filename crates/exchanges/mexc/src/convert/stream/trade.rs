@@ -1,6 +1,5 @@
-use std::str::FromStr;
-
 use mkt_core::Result;
+use mkt_exchange_common as common;
 use mkt_types::{AggTrade, LastPrice, Symbol, Trade, TradeSide};
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
@@ -90,7 +89,7 @@ fn parse_quantity(raw: String, operation: &'static str) -> Result<Decimal> {
 }
 
 fn parse_decimal(raw: String, operation: &'static str, field: &'static str) -> Result<Decimal> {
-    Decimal::from_str(raw.as_str())
+    common::parse_decimal(raw.as_str())
         .map_err(|err| error::invalid_field(operation, field, err.to_string()))
 }
 
@@ -110,14 +109,6 @@ fn parse_unix_millis_timestamp(
     timestamp_millis: i64,
     operation: &'static str,
 ) -> Result<OffsetDateTime> {
-    if timestamp_millis < 0 {
-        return Err(error::invalid_field(
-            operation,
-            "time",
-            "invalid Unix millisecond timestamp",
-        ));
-    }
-
-    OffsetDateTime::from_unix_timestamp_nanos(i128::from(timestamp_millis) * 1_000_000)
-        .map_err(|_| error::invalid_field(operation, "time", "invalid Unix millisecond timestamp"))
+    common::parse_unix_millis_timestamp(timestamp_millis)
+        .map_err(|err| error::invalid_field(operation, "time", err.to_string()))
 }

@@ -5,6 +5,7 @@ use binance_sdk::spot::rest_api::{
     KlinesItemInner, SymbolFilters, TickerPriceResponse,
 };
 use mkt_core::Result;
+use mkt_exchange_common as common;
 use mkt_types::{
     ExchangeId, Kline, KlineInterval, KnownExchange, LastPrice, LotSizeFilter, MarketInfo,
     MarketQuantityMode, MarketStatus, NotionalConstraints, OrderBook, OrderBookLevel, PriceFilter,
@@ -259,7 +260,7 @@ pub(crate) fn last_prices_from_response(
     let map_entry = |symbol: Option<String>, price: Option<String>| -> Result<LastPrice> {
         Ok(LastPrice::new(
             Symbol::spot(symbol.ok_or_else(|| crate::error::missing_field(operation, "symbol"))?),
-            Decimal::from_str(
+            common::parse_decimal(
                 price
                     .ok_or_else(|| crate::error::missing_field(operation, "price"))?
                     .as_str(),
@@ -304,10 +305,10 @@ pub(crate) fn order_book_from_depth(
                     }
 
                     Ok(OrderBookLevel::new(
-                        Decimal::from_str(level[0].as_str()).map_err(|err| {
+                        common::parse_decimal(level[0].as_str()).map_err(|err| {
                             crate::error::invalid_field(operation, field, err.to_string())
                         })?,
-                        Decimal::from_str(level[1].as_str()).map_err(|err| {
+                        common::parse_decimal(level[1].as_str()).map_err(|err| {
                             crate::error::invalid_field(operation, field, err.to_string())
                         })?,
                     ))
@@ -337,7 +338,7 @@ pub(crate) fn trades_from_recent_response(
                 .symbol(symbol.clone())
                 .id(trade.id.map(|value| value.to_string()))
                 .price(
-                    Decimal::from_str(
+                    common::parse_decimal(
                         trade
                             .price
                             .ok_or_else(|| crate::error::missing_field(operation, "price"))?
@@ -348,7 +349,7 @@ pub(crate) fn trades_from_recent_response(
                     })?,
                 )
                 .quantity(
-                    Decimal::from_str(
+                    common::parse_decimal(
                         trade
                             .qty
                             .ok_or_else(|| crate::error::missing_field(operation, "qty"))?
@@ -418,16 +419,14 @@ pub(crate) fn klines_from_rows(
             };
             let parse_decimal_field = |index: usize, field: &'static str| -> Result<Decimal> {
                 match row.get(index) {
-                    Some(KlinesItemInner::String(raw)) => {
-                        Decimal::from_str(raw.as_str()).map_err(|err| {
+                    Some(KlinesItemInner::String(raw)) => common::parse_decimal(raw.as_str())
+                        .map_err(|err| {
                             crate::error::invalid_field(operation, field, err.to_string())
-                        })
-                    }
-                    Some(KlinesItemInner::Integer(raw)) => {
-                        Decimal::from_str(raw.to_string().as_str()).map_err(|err| {
+                        }),
+                    Some(KlinesItemInner::Integer(raw)) => common::parse_decimal(&raw.to_string())
+                        .map_err(|err| {
                             crate::error::invalid_field(operation, field, err.to_string())
-                        })
-                    }
+                        }),
                     Some(other) => Err(crate::error::invalid_field(
                         operation,
                         field,

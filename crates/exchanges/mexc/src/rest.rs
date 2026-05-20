@@ -108,7 +108,7 @@ impl MexcRestClient {
             .rest_base_url
             .join(path)
             .map_err(|err| err.to_string())?;
-        let query_string = serialize_query(&query)?;
+        let query_string = common::serialize_query(&query);
         if signed_timestamp.is_some() {
             let signature = self.sign(&query_string)?;
             url.set_query(Some(
@@ -215,14 +215,6 @@ where
         retry_after,
         None,
     ))
-}
-
-fn serialize_query(query: &[(&'static str, String)]) -> std::result::Result<String, String> {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    for (key, value) in query {
-        serializer.append_pair(key, value);
-    }
-    Ok(serializer.finish())
 }
 
 pub(crate) fn base_rest_url(url: Option<&str>) -> std::result::Result<Url, String> {

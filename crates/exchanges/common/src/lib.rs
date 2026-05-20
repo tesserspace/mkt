@@ -74,6 +74,20 @@ pub fn parse_unix_millis_timestamp(
     )
 }
 
+pub fn parse_unix_seconds_timestamp(
+    timestamp_seconds: i64,
+) -> Result<OffsetDateTime, TimestampError> {
+    if timestamp_seconds < 0 {
+        return Err(TimestampError {
+            message: "invalid Unix second timestamp".to_owned(),
+        });
+    }
+
+    OffsetDateTime::from_unix_timestamp(timestamp_seconds).map_err(|_| TimestampError {
+        message: "invalid Unix second timestamp".to_owned(),
+    })
+}
+
 pub fn parse_optional_unix_millis_timestamp(
     raw: Option<i64>,
 ) -> Result<Option<OffsetDateTime>, TimestampError> {
@@ -96,6 +110,11 @@ pub fn value_to_string(value: &serde_json::Value) -> String {
 
 pub fn closed_from_close_time(close_time: OffsetDateTime) -> bool {
     close_time < OffsetDateTime::now_utc()
+}
+
+pub fn closed_from_unix_seconds(timestamp_seconds: i64) -> bool {
+    parse_unix_seconds_timestamp(timestamp_seconds)
+        .is_ok_and(|close_time| close_time <= OffsetDateTime::now_utc())
 }
 
 pub fn hmac_sha256_hex(secret: &[u8], payload: &str) -> Result<String, String> {
@@ -121,14 +140,30 @@ pub fn parse_base_url(raw: &str, trailing_slash: bool) -> Result<Url, String> {
     Ok(parsed)
 }
 
+pub fn serialize_query<K, V>(query: &[(K, V)]) -> String
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for (key, value) in query {
+        serializer.append_pair(key.as_ref(), value.as_ref());
+    }
+    serializer.finish()
+}
+
 pub fn query_pair(key: &'static str, value: impl Display) -> (&'static str, String) {
     (key, value.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{hmac_sha256_hex, parse_base_url, parse_unix_millis_timestamp, value_to_string};
+    use super::{
+        closed_from_unix_seconds, hmac_sha256_hex, parse_base_url, parse_unix_millis_timestamp,
+        parse_unix_seconds_timestamp, serialize_query, value_to_string,
+    };
     use serde_json::json;
+    use time::{Duration, OffsetDateTime};
 
     #[test]
     fn value_to_string_preserves_string_without_json_quotes() {
@@ -140,6 +175,23 @@ mod tests {
     fn unix_millis_rejects_negative_timestamp() {
         let err = parse_unix_millis_timestamp(-1).expect_err("negative timestamp should fail");
         assert_eq!(err.message(), "invalid Unix millisecond timestamp");
+    }
+
+    #[test]
+    fn unix_seconds_rejects_negative_timestamp() {
+        let err = parse_unix_seconds_timestamp(-1).expect_err("negative timestamp should fail");
+        assert_eq!(err.message(), "invalid Unix second timestamp");
+    }
+
+    #[test]
+    fn closed_from_unix_seconds_rejects_invalid_and_compares_to_now() {
+        assert!(!closed_from_unix_seconds(-1));
+        assert!(closed_from_unix_seconds(
+            (OffsetDateTime::now_utc() - Duration::seconds(1)).unix_timestamp()
+        ));
+        assert!(!closed_from_unix_seconds(
+            (OffsetDateTime::now_utc() + Duration::seconds(60)).unix_timestamp()
+        ));
     }
 
     #[test]
@@ -157,6 +209,18 @@ mod tests {
                 .expect("URL should parse")
                 .as_str(),
             "https://api.example.com/root/"
+        );
+    }
+
+    #[test]
+    fn serialize_query_url_encodes_pairs() {
+        let query = [
+            ("symbol", "USDCUSDT".to_owned()),
+            ("newClientOrderId", "client id".to_owned()),
+        ];
+        assert_eq!(
+            serialize_query(&query),
+            "symbol=USDCUSDT&newClientOrderId=client+id"
         );
     }
 }

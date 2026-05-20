@@ -1,6 +1,5 @@
-use std::str::FromStr;
-
 use mkt_core::Result;
+use mkt_exchange_common as common;
 use mkt_types::{Kline, KlineInterval, Symbol};
 use rust_decimal::Decimal;
 use time::OffsetDateTime;
@@ -91,7 +90,7 @@ pub(crate) fn kline_from_proto(
 }
 
 fn parse_decimal(raw: String, operation: &'static str, field: &'static str) -> Result<Decimal> {
-    Decimal::from_str(raw.as_str())
+    common::parse_decimal(raw.as_str())
         .map_err(|err| error::invalid_field(operation, field, err.to_string()))
 }
 
@@ -100,23 +99,12 @@ fn parse_unix_seconds_timestamp(
     operation: &'static str,
     field: &'static str,
 ) -> Result<OffsetDateTime> {
-    if timestamp_seconds < 0 {
-        return Err(error::invalid_field(
-            operation,
-            field,
-            "invalid Unix second timestamp",
-        ));
-    }
-
-    OffsetDateTime::from_unix_timestamp(timestamp_seconds)
-        .map_err(|_| error::invalid_field(operation, field, "invalid Unix second timestamp"))
+    common::parse_unix_seconds_timestamp(timestamp_seconds)
+        .map_err(|err| error::invalid_field(operation, field, err.to_string()))
 }
 
 fn is_closed(window_end: i64) -> bool {
-    match OffsetDateTime::from_unix_timestamp(window_end) {
-        Ok(close_time) => close_time <= OffsetDateTime::now_utc(),
-        Err(_) => false,
-    }
+    common::closed_from_unix_seconds(window_end)
 }
 
 #[cfg(test)]
