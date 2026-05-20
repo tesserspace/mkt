@@ -121,7 +121,7 @@ impl MexcRestClient {
         }
 
         let mut builder = self.inner.http.request(method, url);
-        if let Some(credentials) = &self.inner.config.credentials {
+        if let (Some(_), Some(credentials)) = (signed_timestamp, &self.inner.config.credentials) {
             builder = builder.header("X-MEXC-APIKEY", credentials.api_key().expose_secret());
         }
         Ok(builder)

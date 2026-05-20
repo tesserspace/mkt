@@ -16,7 +16,7 @@ fn exchange_info_precision_mapping_uses_true_precision_fields_only() {
         "baseAsset":"BTC",
         "quoteAsset":"USDT",
         "baseAssetPrecision":6,
-        "quotePrecision":"2",
+        "quotePrecision":2,
         "quoteAssetPrecision":8,
         "baseSizePrecision":"0.0001",
         "quoteAmountPrecision":"5"

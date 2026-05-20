@@ -23,7 +23,7 @@ pub(crate) struct ExchangeInfoSymbolResponse {
     base_asset: Option<String>,
     quote_asset: Option<String>,
     base_asset_precision: Option<i64>,
-    quote_precision: Option<String>,
+    quote_precision: Option<serde_json::Value>,
     quote_asset_precision: Option<i64>,
     order_types: Option<Vec<String>>,
     is_spot_trading_allowed: Option<bool>,
@@ -210,7 +210,7 @@ fn market_info_from_response(
         )
         .base_asset_precision(market.base_asset_precision)
         .quote_precision(internal::parse_optional_i64(
-            market.quote_precision,
+            market.quote_precision.map(internal::value_to_string),
             operation,
             "quotePrecision",
         )?)
